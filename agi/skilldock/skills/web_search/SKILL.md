@@ -1,0 +1,13 @@
+---
+name: web_search
+description: Search the web for information
+---
+
+# Web Search Skill
+
+## Instructions
+Use this skill to search the internet for information when the user asks a question that requires external knowledge or recent events.
+
+## Examples
+User: "Who won the super bowl?"
+Assistant: Use `web_search` with `{"query": "super bowl winner"}`

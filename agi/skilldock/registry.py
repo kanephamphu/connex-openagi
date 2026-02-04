@@ -1,0 +1,514 @@
+"""
+Skill registry for discovering and managing skills.
+"""
+
+from typing import Dict, List, Optional, Any
+from agi.skilldock.base import Skill, SkillMetadata
+
+
+class SkillRegistry:
+    """
+    Central registry for all available skills.
+    
+    Discovers, loads, and manages skills.
+    """
+    
+    def __init__(self, config):
+        """
+        Initialize the skill registry.
+        
+        Args:
+            config: AGIConfig instance
+        """
+        self.config = config
+        self._skills: Dict[str, Skill] = {}
+        
+        # Initialize SQLite Store
+        from agi.skilldock.store import SkillStore
+        import os
+        db_path = os.path.join(self.config.skills_storage_path, "skills.db")
+        self.store = SkillStore(db_path)
+        
+        self._load_builtin_skills()
+        self.load_local_skills()
+        self._sync_to_store()
+    
+    def _load_builtin_skills(self):
+        """Load built-in skills from the package directory."""
+        import os
+        
+        # Resolve path relative to this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        package_dir = os.path.join(current_dir, "skills")
+        
+        if self.config.verbose:
+            print(f"[SkillRegistry] Loading built-in skills from {package_dir}")
+            
+        # 1. Scan for subdirectories (New Format)
+        for entry in os.listdir(package_dir):
+            full_path = os.path.join(package_dir, entry)
+            if os.path.isdir(full_path):
+                self._load_dynamic_skill(full_path)
+                
+        # 2. Support legacy flat files (during migration)
+        # Note: Ideally we remove this once migration is done, but useful for fallback
+        # actually, since we are migrating, let's try to load flat files if directories failed?
+        # A simple way is to iterate files too.
+        # But _load_dynamic_skill expects a directory with agent.py. 
+        # For flat files we need standard import.
+        
+        # Legacy static imports (only if not found by scanner?)
+        # To avoid duplicates, we'll let the scanner do the work. 
+        # Once we migrate files to folders, scanner picks them up.
+        # Until then, we keep the imports but wrap them in try blocks or check existence?
+        # Simpler: We are about to migrate ALL of them. So I can remove the static imports now.
+        # But if I remove them BEFORE migrating files, the system breaks.
+        # So I will keep them but suppress errors if they fail (e.g. file moved).
+        try:
+            from agi.skilldock.skills.web_search import WebSearchSkill
+            self.register(WebSearchSkill())
+        except ImportError: pass
+        
+        try:
+            from agi.skilldock.skills.http_client import HTTPGetSkill, HTTPPostSkill
+            self.register(HTTPGetSkill())
+            self.register(HTTPPostSkill())
+        except ImportError: pass
+        
+        try:
+            from agi.skilldock.skills.code_executor import CodeExecutorSkill, SafeCodeExecutorSkill
+            self.register(CodeExecutorSkill())
+            self.register(SafeCodeExecutorSkill())
+        except ImportError: pass
+        
+        try:
+            from agi.skilldock.skills.text_analyzer import TextAnalyzerSkill, LLMTextAnalyzerSkill
+            self.register(TextAnalyzerSkill(self.config))
+            self.register(LLMTextAnalyzerSkill(self.config))
+        except ImportError: pass
+        
+        try:
+            from agi.skilldock.skills.skill_creator import SkillCreatorSkill
+            self.register(SkillCreatorSkill(self.config))
+        except ImportError: pass
+        
+        if self.config.verbose:
+            print(f"[SkillRegistry] Loaded {len(self._skills)} skills")
+    
+    def register(self, skill: Skill):
+        """
+        Register a skill and initialize its isolation environment.
+        
+        Args:
+            skill: Skill instance to register
+        """
+        name = skill.metadata.name
+        if name in self._skills:
+            if self.config.verbose:
+                print(f"[SkillRegistry] Replacing existing skill: {name}")
+        
+        # 1. Setup Data Isolation
+        import os
+        from pathlib import Path
+        data_base = Path(self.config.skills_data_path)
+        skill_data_dir = data_base / name
+        os.makedirs(skill_data_dir, exist_ok=True)
+        skill.data_dir = str(skill_data_dir)
+        
+        # 2. Assign AGI Config
+        skill.agi_config = self.config
+        
+        # 3. Load Persistent Config from Store
+        stored_config = self.store.get_skill_config(name)
+        if stored_config:
+            skill.config.update(stored_config)
+
+        self._skills[name] = skill
+        
+        if self.config.verbose:
+            print(f"[SkillRegistry] Registered skill: {name} (Data: {skill.data_dir})")
+
+    async def initialize_all_skills(self):
+        """Initialize all skills: install dependencies and setup environments."""
+        if self.config.verbose:
+            print(f"[SkillRegistry] Initializing {len(self._skills)} skills...")
+            
+        for name, skill in self._skills.items():
+            await self._setup_skill_environment(skill)
+            
+    async def _setup_skill_environment(self, skill: Skill):
+        """Setup isolated environment for a skill."""
+        import os
+        import asyncio
+        import sys
+        import importlib.util
+        
+        metadata = skill.metadata
+        if not metadata.requirements:
+            return
+            
+        # 1. Filter out already installed requirements to save time
+        to_install = []
+        for req in metadata.requirements:
+            # Simple check: take the package name before any version specifier
+            pkg_name = req.split('>=')[0].split('==')[0].split('>')[0].split('<')[0].strip()
+            # Normalize common names if needed (e.g. playwright vs playwright.async_api is handled by spec)
+            if importlib.util.find_spec(pkg_name.replace('-', '_')) is None:
+                to_install.append(req)
+                
+        if not to_install:
+            return
+            
+        if self.config.verbose:
+            print(f"[SkillRegistry] Installing requirements for {metadata.name}: {to_install}")
+            
+        try:
+            # Use non-blocking async subprocess
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "pip", "install", *to_install,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                print(f"[SkillRegistry] Pip install failed for {metadata.name}: {stderr.decode()}")
+            else:
+                # 2. Post-install hooks (like playwright browser install)
+                if any("playwright" in r.lower() for r in to_install):
+                    if self.config.verbose:
+                        print(f"[SkillRegistry] Installing Playwright browsers for {metadata.name}...")
+                    p_proc = await asyncio.create_subprocess_exec(
+                        sys.executable, "-m", "playwright", "install", "chromium",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await p_proc.communicate()
+                    
+        except Exception as e:
+            print(f"[SkillRegistry] Unexpected error setup environment for {metadata.name}: {e}")
+    
+    def unregister(self, skill_name: str):
+        """
+        Unregister a skill.
+        
+        Args:
+            skill_name: Name of skill to remove
+        """
+        if skill_name in self._skills:
+            del self._skills[skill_name]
+    
+    def get_skill(self, skill_name: str) -> Skill:
+        """
+        Get a skill by name.
+        
+        Args:
+            skill_name: Name of the skill
+            
+        Returns:
+            Skill instance
+            
+        Raises:
+            KeyError: If skill not found
+        """
+        if skill_name not in self._skills:
+            available = ', '.join(self._skills.keys())
+            raise KeyError(
+                f"Skill '{skill_name}' not found. Available skills: {available}"
+            )
+        
+        return self._skills[skill_name]
+
+    def update_skill_config(self, skill_name: str, new_config: Dict[str, Any]):
+        """
+        Update skill configuration and persist to DB.
+        
+        Args:
+            skill_name: Name of skill
+            new_config: Configuration dictionary to merge
+        """
+        skill = self.get_skill(skill_name)
+        
+        # Ensure config is a dict
+        if not isinstance(skill.config, dict):
+            skill.config = {}
+            
+        skill.config.update(new_config)
+        
+        # Save to DB
+        self.store.set_skill_config(skill_name, skill.config)
+        if self.config.verbose:
+            print(f"[SkillRegistry] Updated config for {skill_name}: {new_config}")
+    
+    def list_skills(self) -> List[SkillMetadata]:
+        """
+        List all registered skills.
+        
+        Returns:
+            List of skill metadata
+        """
+        return [skill.metadata for skill in self._skills.values()]
+    def get_skills_by_category(self, category: str) -> List[Skill]:
+        """
+        Get all skills in a category.
+        
+        Args:
+            category: Category name
+            
+        Returns:
+            List of skills in that category
+        """
+        return [
+            skill for skill in self._skills.values()
+            if skill.metadata.category == category
+        ]
+
+    async def get_relevant_skills(self, query: str, limit: int = 5) -> List[Skill]:
+        """
+        Get the most relevant skills for a given query using semantic search via SQLite.
+        """
+        if not query or not self.config.openai_api_key:
+             return list(self._skills.values())
+
+        # Initialize Brain if not present
+        if not hasattr(self, "brain"):
+             from agi.brain import GenAIBrain
+             # Pass user's model preference if needed, but registry typically uses embeddings model
+             self.brain = GenAIBrain(self.config)
+             
+        # 1. Embed Query
+        try:
+            query_vec = await self.brain.get_embedding(query)
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[Warn] Query embedding failed: {e}")
+            return list(self._skills.values())
+            
+        # 2. Query Store
+        results = self.store.find_relevant_skills(query_vec, limit)
+        
+        # 3. Map back to active Skill objects
+        relevant_skills = []
+        for meta, score in results:
+            name = meta.get("name")
+            if name in self._skills:
+                relevant_skills.append(self._skills[name])
+                
+        if self.config.verbose:
+            names = [s.metadata.name for s in relevant_skills]
+            print(f"[SkillRegistry] Selected skills for '{query}': {names}")
+            
+        return relevant_skills
+
+    def _sync_to_store(self):
+        """Sync loaded skills metadata to SQLite."""
+        for name, skill in self._skills.items():
+            # Minimal upsert to ensure existence (embeddings generated async later)
+            self.store.upsert_skill(name, skill.metadata.to_dict())
+
+    async def ensure_embeddings(self):
+        """Generate and save embeddings for all skills missing them."""
+        # Initialize Brain
+        if not hasattr(self, "brain"):
+             from agi.brain import GenAIBrain
+             self.brain = GenAIBrain(self.config)
+             
+        for name, skill in self._skills.items():
+            # Check if embedding exists
+            if not self.store.get_embedding(name):
+                if self.config.verbose:
+                    print(f"[SkillRegistry] Generating embedding for {name}...")
+                text = f"Skill {name}: {skill.metadata.description}. Category: {skill.metadata.category}"
+                try:
+                    vec = await self.brain.get_embedding(text)
+                    # Upsert with embedding
+                    self.store.upsert_skill(name, skill.metadata.to_dict(), vec)
+                except Exception as e:
+                    print(f"[Warn] Failed to embed {name}: {e}")
+            else:
+                # Ensure metadata is up to date even if embedding exists
+                self.store.upsert_skill(name, skill.metadata.to_dict())
+    
+    def search_registry(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search for skills in the Connex Registry.
+        
+        Args:
+            query: Search query
+            limit: Max results
+            
+        Returns:
+            List of skill results
+        """
+        import httpx
+        try:
+            url = f"{self.config.registry_url}/skills/search"
+            response = httpx.get(url, params={"q": query, "page_size": limit}, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("results", [])
+            return []
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[SkillRegistry] Search failed: {e}")
+            return []
+
+    async def install_skill(self, scoped_name: str) -> bool:
+        """
+        Install a skill from the registry.
+        
+        Downloads the skill code and registers it dynamically.
+        
+        Args:
+            scoped_name: Name in format @user/skill
+            
+        Returns:
+            True if successful
+        """
+        import httpx
+        import os
+        import json
+        
+        if self.config.verbose:
+            print(f"[SkillRegistry] Attempting to install {scoped_name}...")
+            
+        try:
+            # 1. Fetch skill data
+            url = f"{self.config.registry_url}/skills/{scoped_name}"
+            # Support unauthenticated pulls for public skills, add token if present and needed
+            headers = {}
+            if self.config.connex_auth_token:
+                headers["Authorization"] = f"Bearer {self.config.connex_auth_token}"
+                
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=20)
+            
+            if response.status_code != 200:
+                print(f"[SkillRegistry] Skill {scoped_name} not found in registry (Status: {response.status_code})")
+                return False
+                
+            skill_data = response.json()
+            
+            # 2. Prepare local storage
+            # Sanitization: replace @ with _at_ and / with _ to make safe path
+            safe_name = scoped_name.replace("@", "").replace("/", "_")
+            install_dir = os.path.join(self.config.skills_storage_path, safe_name)
+            os.makedirs(install_dir, exist_ok=True)
+            
+            # 3. Write files
+            # Main code
+            code = skill_data.get("implementation_code", "")
+            if not code:
+                print(f"[SkillRegistry] No implementation code found for {scoped_name}")
+                return False
+                
+            with open(os.path.join(install_dir, "agent.py"), "w", encoding="utf-8") as f:
+                f.write(code)
+                
+            # Manifest
+            with open(os.path.join(install_dir, "connex.json"), "w", encoding="utf-8") as f:
+                json.dump(skill_data, f, indent=2)
+                
+            # Extra files
+            files = skill_data.get("files", {})
+            for fname, content in files.items():
+                # Basic directory traversal protection
+                if ".." in fname or fname.startswith("/"):
+                    continue
+                file_path = os.path.join(install_dir, fname)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            
+            # 4. Load the skill
+            if self.config.verbose:
+                print(f"[SkillRegistry] Downloaded to {install_dir}. Loading...")
+                
+            success = self._load_dynamic_skill(install_dir)
+            if success:
+                 print(f"[SkillRegistry] Successfully installed and loaded {scoped_name}")
+            return success
+            
+        except Exception as e:
+            print(f"[SkillRegistry] Installation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _load_dynamic_skill(self, directory: str) -> bool:
+        """
+        Dynamically load a skill from a directory using importlib.
+        
+        Args:
+            directory: Path to skill directory ensuring it contains agent.py
+            
+        Returns:
+            True if loaded successfully
+        """
+        import importlib.util
+        import sys
+        import os
+        
+        try:
+            # 1. Check root agent.py
+            agent_path = os.path.join(directory, "agent.py")
+            if not os.path.exists(agent_path):
+                # 2. Check scripts/agent.py (Anthropic style)
+                agent_path = os.path.join(directory, "scripts", "agent.py")
+                if not os.path.exists(agent_path):
+                    return False
+                 
+            # Create module name based on directory
+            module_name = "installed_skills." + os.path.basename(directory)
+            
+            spec = importlib.util.spec_from_file_location(module_name, agent_path)
+            if not spec or not spec.loader:
+                return False
+                
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            
+            # Find Skill classes
+            loaded_count = 0
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, type) and issubclass(attr, Skill) and attr is not Skill:
+                    # Instantiate and register
+                    try:
+                        # Check if __init__ accepts config
+                        import inspect
+                        init_sig = inspect.signature(attr.__init__)
+                        
+                        if "config" in init_sig.parameters:
+                            skill_instance = attr(config=self.config)
+                        else:
+                            skill_instance = attr()
+                            
+                        self.register(skill_instance)
+                        loaded_count += 1
+                    except Exception as e:
+                         print(f"[SkillRegistry] Failed to instantiate {attr_name} in {directory}: {e}")
+            
+            return loaded_count > 0
+            
+        except Exception as e:
+            print(f"[SkillRegistry] Dynamic load failed for {directory}: {e}")
+            return False
+
+    def load_local_skills(self):
+        """
+        Load all skills from the local storage directory.
+        """
+        import os
+        if not os.path.exists(self.config.skills_storage_path):
+            return
+            
+        if self.config.verbose:
+            print(f"[SkillRegistry] Scanning local skills in {self.config.skills_storage_path}...")
+            
+        for entry in os.listdir(self.config.skills_storage_path):
+            full_path = os.path.join(self.config.skills_storage_path, entry)
+            if os.path.isdir(full_path):
+                self._load_dynamic_skill(full_path)
+
