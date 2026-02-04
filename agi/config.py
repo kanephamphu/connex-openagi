@@ -46,6 +46,7 @@ class AGIConfig:
     action_timeout: int = 60
     self_correction_enabled: bool = True
     is_speaking: bool = False  # NEW: Global flag to prevent self-triggering via Mic
+    is_listening: bool = False # NEW: Global flag to prevent interrupting user
     on_speak_callback: Optional[Any] = None # NEW: Callback for echo cancellation
     
     # Model-specific settings

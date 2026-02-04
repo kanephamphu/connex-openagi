@@ -61,12 +61,20 @@ class VoiceEar:
 
                 if self.config.is_speaking:
                     # Mute while AGI is talking
-                    time.sleep(0.5)
+                    time.sleep(1.5) # Wait slightly longer
                     continue
 
                 with self.microphone as source:
-                    # Listen for a chunk. timeout=1 means if 0 sound for 1s, raise WaitTimeoutError
-                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=15)
+                    # Set flag to indicate we are actively using the mic
+                    if self.config:
+                        self.config.is_listening = True
+                    
+                    try:
+                        # Listen for a chunk. timeout=1 means if 0 sound for 1s, raise WaitTimeoutError
+                        audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=15)
+                    finally:
+                        if self.config:
+                            self.config.is_listening = False
                     
                 if not self.running:
                     break

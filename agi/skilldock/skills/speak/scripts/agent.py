@@ -44,43 +44,33 @@ class SpeakSkill(Skill):
              return {"error": "No text provided"}
              
         try:
-            # 1. Generate Audio file
-            tts = gTTS(text=text, lang=lang)
+            from agi.utils.audio_manager import audio_manager
             
-            # Create a temporary file
-            # We use a fixed temp dir or system temp
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as fp:
-                temp_path = fp.name
+            async def play_audio(txt):
+                # 1. Generate Audio file
+                tts = gTTS(text=txt, lang=lang)
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as fp:
+                    p = fp.name
+                tts.save(p)
                 
-            tts.save(temp_path)
-            
-            # 2. Play Audio (MacOS specific 'afplay')
-            # For cross-platform, we'd check OS, but task specified mac.
-            if self.agi_config and getattr(self.agi_config, 'verbose', False):
-                print(f"[SpeakSkill] Playing audio: {text[:50]}...")
-            
-            # Set global speaking flag and notify listeners (for echo cancellation)
-            if self.agi_config:
-                self.agi_config.is_speaking = True
-                if hasattr(self.agi_config, 'on_speak_callback') and self.agi_config.on_speak_callback:
+                # 2. Play Audio (MacOS afplay)
+                if self.agi_config and getattr(self.agi_config, 'verbose', False):
+                    print(f"[SpeakSkill] Playing audio: {txt[:50]}...")
+                
+                try:
+                    process = await asyncio.create_subprocess_exec("afplay", p)
+                    await process.wait()
+                finally:
                     try:
-                        self.agi_config.on_speak_callback(text)
+                        os.remove(p)
                     except:
                         pass
-                
-            try:
-                process = await asyncio.create_subprocess_exec("afplay", temp_path)
-                await process.wait()
-            finally:
-                if self.agi_config:
-                    self.agi_config.is_speaking = False
-            
-            # Clean up? Maybe keep for a bit or return path.
-            # We'll return path and let system clean up or user handle it.
+
+            # Use the manager to queue and speak
+            await audio_manager.speak(text, play_audio)
             
             return {
                 "status": "success",
-                "file_path": temp_path,
                 "message": "Audio played successfully"
             }
             

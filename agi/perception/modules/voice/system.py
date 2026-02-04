@@ -54,15 +54,29 @@ class VoicePerception(PerceptionModule):
         phrase_time_limit = kwargs.get("phrase_time_limit", 10)
         
         try:
+            # Respect global flags
+            import asyncio
+            import time
+            while self.config and getattr(self.config, 'is_speaking', False):
+                await asyncio.sleep(0.5)
+
             with self.microphone as source:
-                if self.config.verbose:
-                    print("[VoicePerception] Adjusting for ambient noise... (Speak now)")
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                # Indicate we are listening
+                if self.config:
+                    self.config.is_listening = True
                 
-                if self.config.verbose:
-                    print("[VoicePerception] Listening...")
-                
-                audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
+                try:
+                    if self.config.verbose:
+                        print("[VoicePerception] Adjusting for ambient noise... (Speak now)")
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    
+                    if self.config.verbose:
+                        print("[VoicePerception] Listening...")
+                    
+                    audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
+                finally:
+                    if self.config:
+                        self.config.is_listening = False
                 
                 if self.config.verbose:
                     print("[VoicePerception] Processing audio...")

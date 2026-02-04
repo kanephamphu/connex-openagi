@@ -45,6 +45,11 @@ class AGI:
         self.brain = GenAIBrain(self.config)
         self.loop = asyncio.get_event_loop() # Store loop for thread-safe sensor callbacks
         
+        # Audio Management
+        from agi.utils.audio_manager import audio_manager
+        audio_manager.config = self.config
+        audio_manager.set_loop(self.loop)
+        
         from agi.planner.brain_planner import BrainPlanner
         self.planner = BrainPlanner(self.config)
         self.skill_registry = SkillRegistry(self.config)
