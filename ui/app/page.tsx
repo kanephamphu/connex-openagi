@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Zap, Brain, Terminal, MessageSquare, Loader2, PlayCircle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react"
+import { Zap, Brain, Terminal, MessageSquare, Loader2, PlayCircle, CheckCircle2, ChevronDown, ChevronUp, Mic, MicOff } from "lucide-react"
 
 // Types
 type Message = {
@@ -33,6 +33,20 @@ export default function AGIChatPage() {
     schema: any;
   } | null>(null)
   const [configValues, setConfigValues] = React.useState<Record<string, string>>({})
+  const [earActive, setEarActive] = React.useState(false)
+
+  React.useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("/health")
+        const data = await res.json()
+        setEarActive(data.ear_active)
+      } catch { }
+    }
+    checkStatus()
+    const interval = setInterval(checkStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const toggleMessageExpansion = (index: number) => {
     setExpandedMessages(prev => {
@@ -213,8 +227,21 @@ export default function AGIChatPage() {
             <p className="text-xs text-muted-foreground">Autonomous Planning Agent</p>
           </div>
         </div>
-        <div className="text-xs text-muted-foreground font-mono">
-          System: Online
+        <div className="flex items-center gap-3">
+          <div
+            onClick={async () => {
+              const next = !earActive;
+              const res = await fetch(`/api/sensors/ear/toggle?enabled=${next}`, { method: 'POST' });
+              if (res.ok) setEarActive(next);
+            }}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer border ${earActive ? 'bg-blue-500/10 text-blue-500 border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'bg-neutral-100 text-neutral-400 border-neutral-200'}`}
+          >
+            {earActive ? <Mic className="w-3.5 h-3.5 animate-pulse" /> : <MicOff className="w-3.5 h-3.5" />}
+            Ear: {earActive ? "Listening" : "Off"}
+          </div>
+          <div className="text-xs text-muted-foreground font-mono">
+            System: Online
+          </div>
         </div>
       </header>
 
@@ -243,8 +270,8 @@ export default function AGIChatPage() {
 
                 <div className={`flex flex-col gap-2 max-w-[85%] lg:max-w-[75%]`}>
                   <div className={`p-4 rounded-2xl shadow-sm overflow-hidden ${msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-tr-none'
-                      : 'bg-white border text-foreground rounded-tl-none'
+                    ? 'bg-primary text-primary-foreground rounded-tr-none'
+                    : 'bg-white border text-foreground rounded-tl-none'
                     }`}>
                     {msg.role === 'user' ? (
                       <p className="whitespace-pre-wrap">{msg.content}</p>

@@ -77,11 +77,26 @@ class AGI:
         self.skill_registry.register(SystemControlSkill(self.config))
         self.skill_registry.register(WeatherSkill(self.config))
         
+        # Core Foundation Skills
+        from agi.skilldock.skills.general_chat.scripts.agent import GeneralChatSkill
+        from agi.skilldock.skills.text_analyzer.scripts.agent import TextAnalyzerSkill
+        from agi.skilldock.skills.web_search.scripts.agent import WebSearchSkill
+        from agi.skilldock.skills.file_manager.scripts.agent import FileManagerSkill
+        
+        self.skill_registry.register(GeneralChatSkill(self.config))
+        self.skill_registry.register(TextAnalyzerSkill(self.config))
+        self.skill_registry.register(WebSearchSkill(self.config))
+        self.skill_registry.register(FileManagerSkill(self.config))
+        
         # Internal Interface Skill
         from agi.skilldock.skills.agi_interface.scripts.agent import AGIInterfaceSkill
         self.skill_registry.register(AGIInterfaceSkill(self.config, self.execute))
         
         self.history = HistoryManager(data_dir=str(self.config.data_dir) if hasattr(self.config, 'data_dir') else "data")
+        
+        # Set default verbose for demo if not in environment
+        if not hasattr(self.config, 'verbose_explicit'): # Check if user explicitly set it
+             self.config.verbose = True
 
     async def initialize(self):
         """Perform async initialization tasks."""
@@ -140,8 +155,17 @@ class AGI:
                 print(f"[AGI] Executing reflex plan for '{reflex_name}'")
             
             # Execute the plan via orchestrator
-            # We don't wait for it to finish in this event handler to keep sensor responsive
-            asyncio.create_task(self.orchestrator.execute_plan(plan))
+            # We add a callback to catch exceptions in the task
+            def task_done_callback(t):
+                try:
+                    t.result()
+                except Exception as e:
+                    print(f"[AGI] Exception in reflex task '{reflex_name}': {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            task = asyncio.create_task(self.orchestrator.execute_plan(plan))
+            task.add_done_callback(task_done_callback)
 
     async def execute(self, goal: str, context: dict | None = None) -> dict:
         """
@@ -160,13 +184,26 @@ class AGI:
             ...     context={"industry": "SaaS", "region": "US"}
             ... )
         """
+        if self.config.verbose:
+            print(f"[AGI] Decomposing goal: '{goal}'")
+            if context:
+                print(f"[AGI] Context: {context}")
+
         # Tier 1: Plan the actions
         # Get relevant, enabled skills
         skills = await self.skill_registry.get_relevant_skills(goal)
         plan = await self.planner.create_plan(goal, context or {}, skills)
         
+        if self.config.verbose:
+            print(f"[AGI] Plan created with {len(plan.actions)} actions.")
+            for i, action in enumerate(plan.actions):
+                print(f"  {i+1}. {action.id} ({action.skill}): {action.description}")
+
         # Tier 2 & 3: Execute the plan
         result = await self.orchestrator.execute_plan(plan)
+        
+        if self.config.verbose:
+            print(f"[AGI] Execution completed. Success: {result.success}")
         
         return {
             "success": result.success,
