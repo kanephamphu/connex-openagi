@@ -48,20 +48,31 @@ class SkillAcquisitionSkill(Skill):
         Requirement: {requirement}
         
         The code MUST be a class inheriting from `Skill` and providing `metadata` and `execute` method.
-        Use other skills as reference.
+        
+        GUIDELINES:
+        1. Use `from typing import Dict, Any, List, Optional`.
+        2. Use `from agi.skilldock.base import Skill, SkillMetadata`.
+        3. If you need LLM reasoning, use `from agi.brain import GenAIBrain, TaskType` and initialize it in `__init__`.
+        4. Do NOT use non-existent modules like `agi.llm`.
+        5. Assume you have access to `self.config`.
         
         Example Structure:
         ```python
-        from typing import Dict, Any
+        from typing import Dict, Any, List, Optional
         from agi.skilldock.base import Skill, SkillMetadata
+        from agi.brain import GenAIBrain, TaskType
         
         class MyNewSkill(Skill):
+            def __init__(self, config):
+                super().__init__(config)
+                self.brain = GenAIBrain(config)
+
             @property
             def metadata(self) -> SkillMetadata:
                 # ... define metadata ...
             
             async def execute(self, **kwargs) -> Dict[str, Any]:
-                # ... implementation ...
+                # ... implementation using self.brain ...
         ```
         
         Return ONLY the Python code block.

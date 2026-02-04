@@ -28,7 +28,8 @@ class WebSearchSkill(Skill):
                         "default": "auto"
                     },
                     "num_results": {"type": "integer", "default": 5},
-                    "extract_keywords": {"type": "boolean", "default": False}
+                    "extract_keywords": {"type": "boolean", "default": False},
+                    "headless": {"type": "boolean", "default": True, "description": "Whether to run the browser in headless mode"}
                 },
                 "required": ["query"]
             },
@@ -67,11 +68,14 @@ class WebSearchSkill(Skill):
             requirements=["httpx", "playwright"]
         )
     
-    async def execute(self, query: str, engine: str = "auto", num_results: int = 5, extract_keywords: bool = False) -> Dict[str, Any]:
+    async def execute(self, query: str, engine: str = "auto", num_results: int = 5, extract_keywords: bool = False, headless: bool = True) -> Dict[str, Any]:
         """
         Execute web search with multi-engine support.
         """
         await self.validate_inputs(query=query, engine=engine, num_results=num_results)
+        
+        # Override headless from execution arg if provided
+        self._execution_headless = headless
         
         search_query = query
         
@@ -95,7 +99,7 @@ class WebSearchSkill(Skill):
         engine_val = engine.lower()
         if engine_val == "auto":
             # Prefer Google -> Bing -> Browser -> DuckDuckGo based on keys
-            if self.config.get("GOOGLE_SEARCH_API_KEY") and self.config.get("GOOGLE_SEARCH_ID"):
+            if self.agi_config.google_api_key or (self.config.get("GOOGLE_SEARCH_API_KEY") and self.config.get("GOOGLE_SEARCH_ID")):
                 engine_val = "google"
             elif self.config.get("BING_SEARCH_API_KEY"):
                 engine_val = "bing"
@@ -179,7 +183,7 @@ class WebSearchSkill(Skill):
                     parser.feed(response.text)
                     results = parser.results
             except Exception as e:
-                if self.config and self.config.verbose:
+                if self.config and self.config.get("verbose"):
                     print(f"[WebSearch] DuckDuckGo crawl failed: {e}")
         
         # Fallback to a simpler mock if still empty (for reliability in closed environments)
@@ -191,7 +195,7 @@ class WebSearchSkill(Skill):
 
     async def _search_google(self, query: str, num_results: int) -> List[Dict[str, Any]]:
         """Search using Google Custom Search JSON API."""
-        api_key = self.config.get("GOOGLE_SEARCH_API_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY")
+        api_key = self.config.get("GOOGLE_SEARCH_API_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY") or self.agi_config.google_api_key
         search_id = self.config.get("GOOGLE_SEARCH_ID") or os.getenv("GOOGLE_SEARCH_ID")
         if not api_key or not search_id:
             raise ValueError("Google Search API key or ID missing")
@@ -246,7 +250,9 @@ class WebSearchSkill(Skill):
             raise ImportError("playwright is not installed. Please add it to requirements.")
             
         results = []
-        headless = self.config.get("HEADLESS", True)
+        # Priority: execution argument -> skill config -> default True
+        headless = getattr(self, '_execution_headless', self.config.get("HEADLESS", True))
+        
         async with async_playwright() as p:
             # Firefox is more reliable in some environments
             browser = await p.firefox.launch(headless=headless)

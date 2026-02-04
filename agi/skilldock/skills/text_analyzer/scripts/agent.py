@@ -23,9 +23,9 @@ class TextAnalyzerSkill(Skill):
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "Text to analyze"},
-                    "task": {"type": "string", "description": "Analysis task (e.g., summarize)"}
+                    "task": {"type": "string", "description": "Analysis task (e.g., summarize)", "default": "summarize"}
                 },
-                "required": ["text", "task"]
+                "required": ["text"]
             },
             output_schema={
                 "analysis": "str"
@@ -40,8 +40,7 @@ class TextAnalyzerSkill(Skill):
                 )
             ]
         )
-    
-    async def execute(self, text: str, task: str) -> Dict[str, Any]:
+    async def execute(self, text: Any, task: str = "summarize") -> Dict[str, Any]:
         """
         Analyze text according to task.
         """
@@ -76,9 +75,9 @@ class LLMTextAnalyzerSkill(Skill):
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "Text to analyze"},
-                    "task": {"type": "string", "description": "Analysis task"}
+                    "task": {"type": "string", "description": "Analysis task", "default": "summarize"}
                 },
-                "required": ["text", "task"]
+                "required": ["text"]
             },
             output_schema={
                 "analysis": "str"
@@ -92,8 +91,7 @@ class LLMTextAnalyzerSkill(Skill):
                 )
             ]
         )
-    
-    async def execute(self, text: str, task: str) -> Dict[str, Any]:
+    async def execute(self, text: Any, task: str = "summarize") -> Dict[str, Any]:
         """Analyze text using LLM."""
         await self.validate_inputs(text=text, task=task)
         

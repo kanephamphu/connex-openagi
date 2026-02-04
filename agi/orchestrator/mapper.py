@@ -125,6 +125,12 @@ class IOMapper:
                 elif expected_type == "boolean" and isinstance(value, str):
                     if value.lower() in ["true", "yes", "1", "on"]: mapped[key] = True
                     elif value.lower() in ["false", "no", "0", "off"]: mapped[key] = False
+                elif expected_type == "string" and not isinstance(value, str):
+                    # Auto-stringify lists/dicts if string is expected
+                    if isinstance(value, (list, dict)):
+                        mapped[key] = json.dumps(value, indent=2)
+                    else:
+                        mapped[key] = str(value)
                     
         return mapped
     

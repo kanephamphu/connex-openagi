@@ -152,12 +152,10 @@ class Orchestrator:
                                         if not valid_keys and "type" not in input_schema:
                                             valid_keys = list(input_schema.keys())
                                             
-                                    sanitized_inputs = fixed_inputs
-                                    if valid_keys:
-                                        sanitized_inputs = {k: v for k, v in fixed_inputs.items() if k in valid_keys}
+                                    sanitized_inputs = self.mapper.auto_map_to_schema(fixed_inputs, skill.metadata, action.description)
                                     
                                     if self.config.verbose and sanitized_inputs != fixed_inputs:
-                                        print(f"[Orchestrator] Sanitized inputs for retry: {sanitized_inputs}")
+                                        print(f"[Orchestrator] Coerced/Sanitized inputs for retry: {sanitized_inputs}")
 
                                     # Execute with timeout
                                     output = await asyncio.wait_for(

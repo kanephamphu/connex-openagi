@@ -58,9 +58,14 @@ class SpeakSkill(Skill):
             if self.agi_config and getattr(self.agi_config, 'verbose', False):
                 print(f"[SpeakSkill] Playing audio: {text[:50]}...")
             
-            # Set global speaking flag to mute 'Ear' sensor
+            # Set global speaking flag and notify listeners (for echo cancellation)
             if self.agi_config:
                 self.agi_config.is_speaking = True
+                if hasattr(self.agi_config, 'on_speak_callback') and self.agi_config.on_speak_callback:
+                    try:
+                        self.agi_config.on_speak_callback(text)
+                    except:
+                        pass
                 
             try:
                 process = await asyncio.create_subprocess_exec("afplay", temp_path)

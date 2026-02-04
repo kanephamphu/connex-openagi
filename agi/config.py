@@ -7,7 +7,7 @@ Handles API key loading, model selection, and client factory functions.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
 
@@ -46,6 +46,7 @@ class AGIConfig:
     action_timeout: int = 60
     self_correction_enabled: bool = True
     is_speaking: bool = False  # NEW: Global flag to prevent self-triggering via Mic
+    on_speak_callback: Optional[Any] = None # NEW: Callback for echo cancellation
     
     # Model-specific settings
     planner_model: str = "deepseek-reasoner"
