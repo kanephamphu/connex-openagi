@@ -28,7 +28,8 @@ class HTTPGetSkill(Skill):
                 "content": "str",
                 "status_code": "int"
             },
-            category="network",
+            category="web",
+            sub_category="api",
             timeout=30,
             tests=[
                 SkillTestCase(
@@ -84,7 +85,8 @@ class HTTPPostSkill(Skill):
                 "response": "str",
                 "status_code": "int"
             },
-            category="network",
+            category="web",
+            sub_category="api",
             tests=[
                 SkillTestCase(
                     description="Post to header echo (Mock)",

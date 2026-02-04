@@ -16,7 +16,8 @@ class SystemControlSkill(Skill):
         return SkillMetadata(
             name="system_control",
             description="Controls macOS system functions: open/close apps, volume, brightness, screenshots, and system states (lock/sleep).",
-            category="tool",
+            category="system",
+            sub_category="control",
             input_schema={
                 "type": "object",
                 "properties": {

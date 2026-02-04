@@ -1,6 +1,8 @@
 ---
 name: web_search
 description: Search the web for information
+category: web
+sub_category: search
 inputs:
   query:
     type: string

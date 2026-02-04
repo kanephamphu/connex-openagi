@@ -17,6 +17,7 @@ class AGIInterfaceSkill(Skill):
             name="agi_brain_interface",
             description="Internal interface to submit new goals to the AGI brain.",
             category="system",
+            sub_category="bridge",
             input_schema={
                 "type": "object",
                 "properties": {

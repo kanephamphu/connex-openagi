@@ -1,6 +1,8 @@
 ---
 name: file_manager
 description: Read, write, and manage files in the workspace
+category: io
+sub_category: filesystem
 inputs:
   action:
     type: string

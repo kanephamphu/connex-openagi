@@ -14,6 +14,8 @@ class SystemMonitorPerception(PerceptionModule):
         return PerceptionMetadata(
             name="system_monitor",
             description="Provides real-time system metrics (CPU, RAM). Use this to check server health.",
+            category="system",
+            sub_category="metrics",
             version="1.0.0"
         )
 

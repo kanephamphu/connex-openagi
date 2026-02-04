@@ -14,6 +14,8 @@ class TimePerception(PerceptionModule):
         return PerceptionMetadata(
             name="time_sense",
             description="Provides time awareness and tick events.",
+            category="system",
+            sub_category="context",
             version="1.0.0"
         )
         

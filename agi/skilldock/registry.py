@@ -242,43 +242,76 @@ class SkillRegistry:
 
     async def get_relevant_skills(self, query: str, limit: int = 5) -> List[Skill]:
         """
-        Get the most relevant skills for a given query using semantic search via SQLite.
+        Get the most relevant skills for a given query using a combination 
+        of semantic search (vector) and keyword boosting (category/description).
         """
-        if not query or not self.config.openai_api_key:
-             return list(self._skills.values())
+        if not query:
+             return list(self._skills.values())[:limit]
 
-        # Initialize Brain if not present
-        if not hasattr(self, "brain"):
-             from agi.brain import GenAIBrain
-             # Pass user's model preference if needed, but registry typically uses embeddings model
-             self.brain = GenAIBrain(self.config)
-             
-        # 1. Embed Query
-        try:
-            query_vec = await self.brain.get_embedding(query)
-        except Exception as e:
-            if self.config.verbose:
-                print(f"[Warn] Query embedding failed: {e}")
-            return list(self._skills.values())
-            
-        # 2. Query Store
-        results = self.store.find_relevant_skills(query_vec, limit)
-        
-        # 3. Map back to active Skill objects
+        # 1. Semantic Vector Search
         relevant_skills = []
-        for meta, score in results:
-            name = meta.get("name")
-            if name in self._skills:
-                skill = self._skills[name]
-                # Filter out disabled skills
-                if not isinstance(skill.config, dict) or skill.config.get("enabled", True):
-                    relevant_skills.append(skill)
+        if self.config.openai_api_key:
+            # Initialize Brain if not present
+            if not hasattr(self, "brain"):
+                 from agi.brain import GenAIBrain
+                 self.brain = GenAIBrain(self.config)
+                 
+            try:
+                query_vec = await self.brain.get_embedding(query)
+                results = self.store.find_relevant_skills(query_vec, limit * 2) # Get more for re-ranking
+                
+                for meta, score in results:
+                    name = meta.get("name")
+                    if name in self._skills:
+                        skill = self._skills[name]
+                        if not isinstance(skill.config, dict) or skill.config.get("enabled", True):
+                            relevant_skills.append((skill, score))
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[Warn] Query embedding failed: {e}")
+
+        # 2. Keyword Boosting & Fallback
+        # If vector search failed or returned few results, or if we want to boost matches
+        query_lower = query.lower()
+        
+        # Collect all active skills
+        active_skills = [s for s in self._skills.values() if not isinstance(s.config, dict) or s.config.get("enabled", True)]
+        
+        # Build score map from vector results
+        score_map = {s.metadata.name: score for s, score in relevant_skills}
+        
+        final_scored_skills = []
+        for skill in active_skills:
+            name = skill.metadata.name
+            score = score_map.get(name, 0.0)
+            
+            # Boost for category match
+            category = skill.metadata.category.lower()
+            sub_category = getattr(skill.metadata, 'sub_category', 'general').lower()
+            if category in query_lower or query_lower in category:
+                score += 0.5
+            if sub_category in query_lower or query_lower in sub_category:
+                score += 0.3
+                
+            # Boost for description keyword match
+            desc = skill.metadata.description.lower()
+            if any(word in desc for word in query_lower.split() if len(word) > 3):
+                score += 0.3
+                
+            if score > 0 or not relevant_skills:
+                final_scored_skills.append((skill, score))
+        
+        # Sort by boosted score
+        final_scored_skills.sort(key=lambda x: x[1], reverse=True)
+        
+        # Take top N
+        selected = [s for s, _ in final_scored_skills[:limit]]
                 
         if self.config.verbose:
-            names = [s.metadata.name for s in relevant_skills]
+            names = [s.metadata.name for s in selected]
             print(f"[SkillRegistry] Selected skills for '{query}': {names}")
             
-        return relevant_skills
+        return selected
 
     def _sync_to_store(self):
         """Sync loaded skills metadata to SQLite."""
@@ -298,7 +331,14 @@ class SkillRegistry:
             if not self.store.get_embedding(name):
                 if self.config.verbose:
                     print(f"[SkillRegistry] Generating embedding for {name}...")
-                text = f"Skill {name}: {skill.metadata.description}. Category: {skill.metadata.category}"
+                # Enhanced embedding text
+                text = (
+                    f"Skill Name: {name}\n"
+                    f"Category: {skill.metadata.category}\n"
+                    f"Sub-Category: {getattr(skill.metadata, 'sub_category', 'general')}\n"
+                    f"Description: {skill.metadata.description}\n"
+                    f"Functions/Keywords: {skill.metadata.name.replace('_', ' ')}"
+                )
                 try:
                     vec = await self.brain.get_embedding(text)
                     # Upsert with embedding

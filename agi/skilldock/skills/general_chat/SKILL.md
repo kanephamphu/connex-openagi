@@ -1,6 +1,8 @@
 ---
 name: general_chat
 description: Handle general conversation, greetings, and non-technical questions
+category: communication
+sub_category: chat
 inputs:
   message:
     type: string

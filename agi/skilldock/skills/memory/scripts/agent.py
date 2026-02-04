@@ -44,7 +44,8 @@ class MemorySkill(Skill):
                 "results": "list | str",
                 "message": "str"
             },
-            category="knowledge",
+            category="core",
+            sub_category="management",
             tests=[
                 SkillTestCase(
                     description="Store and Recall",

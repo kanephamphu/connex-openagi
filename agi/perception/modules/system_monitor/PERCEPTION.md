@@ -1,4 +1,11 @@
 
+---
+name: system_monitor
+description: Provides real-time system metrics (CPU, RAM).
+category: system
+sub_category: metrics
+---
+
 # System Monitor Perception
 
 **Type**: Active Sensor

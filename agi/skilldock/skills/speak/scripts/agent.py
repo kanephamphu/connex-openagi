@@ -17,7 +17,8 @@ class SpeakSkill(Skill):
         return SkillMetadata(
             name="speak",
             description="Converts text to speech and plays it locally.",
-            category="output",
+            category="communication",
+            sub_category="voice",
             input_schema={
                 "type": "object",
                 "properties": {

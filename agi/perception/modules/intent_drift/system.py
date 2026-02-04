@@ -12,6 +12,8 @@ class IntentDriftPerception(PerceptionModule):
         return PerceptionMetadata(
             name="intent_drift",
             description="Detects if the user's current request diverges from the ongoing task sequence.",
+            category="core",
+            sub_category="cognition",
             version="1.0.0"
         )
 

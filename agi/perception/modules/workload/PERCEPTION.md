@@ -1,4 +1,11 @@
 
+---
+name: workload_monitor
+description: Perceives CPU, memory usage, and internal task pressure.
+category: core
+sub_category: state
+---
+
 # Workload Perception
 
 **Type**: Active Sensor

@@ -13,6 +13,8 @@ class VoicePerception(PerceptionModule):
         return PerceptionMetadata(
             name="voice_listener",
             description="Listens for speech and converts it to text.",
+            category="system",
+            sub_category="audio",
             version="1.0.0"
         )
         

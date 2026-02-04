@@ -1,4 +1,11 @@
 
+---
+name: voice_listener
+description: Listens for speech and converts it to text.
+category: system
+sub_category: audio
+---
+
 # Voice Perception
 
 **Type**: Passive Sensor

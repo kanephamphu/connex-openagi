@@ -38,7 +38,8 @@ class SkillCreatorSkill(Skill):
                 "skill_id": "str",
                 "message": "str"
             },
-            category="development",
+            category="meta",
+            sub_category="development",
             timeout=120,
             tests=[
                 SkillTestCase(
@@ -130,7 +131,8 @@ description: {description}
                     "name": name,
                     "description": description,
                     "version": "0.1.0-local",
-                    "category": "development",
+                    "category": "meta",
+                    "sub_category": "development",
                     "files": {"SKILL.md": skill_md}
                 }
                 with open(os.path.join(install_dir, "connex.json"), "w", encoding="utf-8") as f:

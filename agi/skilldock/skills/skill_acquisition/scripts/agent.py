@@ -33,6 +33,7 @@ class SkillAcquisitionSkill(Skill):
                 "message": "str"
             },
             category="meta",
+            sub_category="development",
             timeout=180
         )
     

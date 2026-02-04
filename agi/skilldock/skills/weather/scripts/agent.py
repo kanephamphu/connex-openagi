@@ -13,7 +13,8 @@ class WeatherSkill(Skill):
         return SkillMetadata(
             name="weather",
             description="Checks current weather for a city.",
-            category="information",
+            category="web",
+            sub_category="data",
             input_schema={
                 "type": "object",
                 "properties": {

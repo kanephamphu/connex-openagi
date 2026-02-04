@@ -91,6 +91,8 @@ class PerceptionLayer:
         self.db.register_perception(
             name=module.metadata.name,
             description=module.metadata.description,
+            category=getattr(module.metadata, 'category', 'general'),
+            sub_category=getattr(module.metadata, 'sub_category', 'general'),
             type="perception",
             version=module.metadata.version,
             embedding=embedding # Pass existing (or None)
@@ -113,12 +115,16 @@ class PerceptionLayer:
             current_emb = self.db.get_perception_embedding(name)
             if not current_emb:
                 try:
-                    text = f"{module.metadata.name}: {module.metadata.description} ({module.metadata.version})"
+                    category = getattr(module.metadata, 'category', 'general')
+                    sub_category = getattr(module.metadata, 'sub_category', 'general')
+                    text = f"Perception Module {name}: {module.metadata.description}. Category: {category}/{sub_category} (v{module.metadata.version})"
                     vec = await self.brain.get_embedding(text)
                     
                     self.db.register_perception(
                         name=module.metadata.name,
                         description=module.metadata.description,
+                        category=category,
+                        sub_category=sub_category,
                         type="perception",
                         version=module.metadata.version,
                         embedding=vec
@@ -129,30 +135,60 @@ class PerceptionLayer:
                     if self.config.verbose:
                         print(f"[Perception] Embedding failed for {name}: {e}")
 
-    async def search_sensors(self, query: str) -> List[str]:
+    async def search_sensors(self, query: str, limit: int = 5) -> List[str]:
         """
-        Search for sensors using vector similarity.
-        Returns list of module names.
+        Search for sensors using a combination of vector similarity 
+        and keyword boosting (category/description).
         """
-        if not self.config.openai_api_key:
-            # Fallback to DB generic text search if no key
-            results = self.db.search_perceptions(query)
-            return [r['name'] for r in results]
+        if not query:
+            return list(self._modules.keys())[:limit]
             
-        from agi.brain import GenAIBrain
-        if not hasattr(self, 'brain'):
-            self.brain = GenAIBrain(self.config)
+        # 1. Semantic Vector Search
+        results_map = {} # name -> similarity score
+        
+        if self.config.openai_api_key:
+            from agi.brain import GenAIBrain
+            if not hasattr(self, 'brain'):
+                self.brain = GenAIBrain(self.config)
+                
+            try:
+                query_vec = await self.brain.get_embedding(query)
+                matches = self.db.find_similar_perceptions(query_vec, limit=limit*2)
+                for m in matches:
+                    results_map[m['name']] = 0.5 + (m.get('similarity', 0.5) * 0.5) # Scale similarity
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[Perception] Vector search failed ({e}).")
+
+        # 2. Keyword Boosting
+        query_lower = query.lower()
+        active_modules = self._modules.values()
+        
+        final_scores = []
+        for module in active_modules:
+            name = module.metadata.name
+            score = results_map.get(name, 0.0)
             
-        try:
-            query_vec = await self.brain.get_embedding(query)
-            results = self.db.find_similar_perceptions(query_vec)
-            return [r['name'] for r in results]
-        except Exception as e:
-            if self.config.verbose:
-                print(f"[Perception] Vector search failed ({e}). Falling back to text search.")
-            # Fallback
-            results = self.db.search_perceptions(query)
-            return [r['name'] for r in results]
+            # Boost for category/sub_category match
+            category = getattr(module.metadata, 'category', 'general').lower()
+            sub_category = getattr(module.metadata, 'sub_category', 'general').lower()
+            if category in query_lower or query_lower in category:
+                score += 0.5
+            if sub_category in query_lower or query_lower in sub_category:
+                score += 0.3
+                
+            # Boost for description keyword match
+            desc = module.metadata.description.lower()
+            if any(word in desc for word in query_lower.split() if len(word) > 3):
+                score += 0.3
+                
+            if score > 0 or not results_map:
+                final_scores.append((name, score))
+                
+        # Sort by score desc
+        final_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        return [item[0] for item in final_scores[:limit]]
 
     def get_module(self, name: str) -> Optional[PerceptionModule]:
         return self._modules.get(name)

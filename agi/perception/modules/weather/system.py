@@ -15,6 +15,8 @@ class WeatherPerception(PerceptionModule):
         return PerceptionMetadata(
             name="weather_monitor",
             description="Monitors local weather conditions.",
+            category="environment",
+            sub_category="data",
             version="1.0.0"
         )
         

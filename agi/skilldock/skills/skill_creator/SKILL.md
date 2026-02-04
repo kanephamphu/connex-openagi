@@ -1,6 +1,8 @@
 ---
 name: skill_creator
 description: Create and publish new skills
+category: meta
+sub_category: development
 ---
 
 # Skill Creator

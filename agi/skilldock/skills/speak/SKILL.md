@@ -1,6 +1,8 @@
 ---
 name: speak
 description: Convert text to speech and play it
+category: communication
+sub_category: voice
 inputs:
   text:
     type: string

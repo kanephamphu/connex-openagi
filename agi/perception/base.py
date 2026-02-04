@@ -7,6 +7,8 @@ from dataclasses import dataclass
 class PerceptionMetadata:
     name: str
     description: str
+    category: str = "general"
+    sub_category: str = "general"
     version: str = "0.1.0"
     config_schema: Optional[Dict[str, Any]] = None
 

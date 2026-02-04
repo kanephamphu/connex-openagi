@@ -1,9 +1,0 @@
-{
-  "name": "auto_llm_text_analyzer",
-  "description": "Auto-acquired skill for: llm_text_analyzer",
-  "version": "0.1.0-local",
-  "category": "development",
-  "files": {
-    "SKILL.md": "---\nname: auto_llm_text_analyzer\ndescription: Auto-acquired skill for: llm_text_analyzer\n---\n\n# auto_llm_text_analyzer\n\n## Instructions\nUse this skill to llm_text_analyzer\n\n## Examples\nNo examples yet.\n"
-  }
-}

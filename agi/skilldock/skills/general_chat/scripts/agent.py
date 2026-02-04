@@ -38,7 +38,8 @@ class GeneralChatSkill(Skill):
                 "reply": "str",
                 "response": "str"
             },
-            category="foundation",
+            category="communication",
+            sub_category="chat",
             timeout=60,
             tests=[
                 SkillTestCase(

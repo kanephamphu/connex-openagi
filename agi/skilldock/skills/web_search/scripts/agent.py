@@ -17,6 +17,7 @@ class WebSearchSkill(Skill):
             name="web_search",
             description="Search the web for information. Supports Google, Bing, DuckDuckGo and Browser-based search.",
             category="web",
+            sub_category="search",
             version="1.0.0",
             input_schema={
                 "type": "object",

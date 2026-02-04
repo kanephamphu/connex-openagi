@@ -1,6 +1,8 @@
 ---
 name: text_analyzer
 description: Analyze text using LLMs
+category: logic
+sub_category: nlp
 inputs:
   text:
     type: string

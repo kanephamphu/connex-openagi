@@ -1,4 +1,11 @@
 
+---
+name: clipboard_monitor
+description: Monitors system clipboard for new content.
+category: system
+sub_category: input
+---
+
 # Clipboard Perception
 
 **Type**: Passive Sensor

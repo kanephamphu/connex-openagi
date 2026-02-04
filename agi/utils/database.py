@@ -26,6 +26,8 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS perceptions (
                 name TEXT PRIMARY KEY,
                 description TEXT,
+                category TEXT,
+                sub_category TEXT,
                 type TEXT,
                 version TEXT,
                 enabled BOOLEAN DEFAULT 1,
@@ -48,6 +50,10 @@ class DatabaseManager:
         columns = [info[1] for info in cursor.fetchall()]
         if "embedding" not in columns:
             cursor.execute("ALTER TABLE perceptions ADD COLUMN embedding BLOB")
+        if "category" not in columns:
+            cursor.execute("ALTER TABLE perceptions ADD COLUMN category TEXT")
+        if "sub_category" not in columns:
+            cursor.execute("ALTER TABLE perceptions ADD COLUMN sub_category TEXT")
             
         conn.commit()
         conn.close()
@@ -109,7 +115,7 @@ class DatabaseManager:
                 config[key] = val_str
         return config
         
-    def register_perception(self, name: str, description: str, type: str, version: str, embedding: Optional[List[float]] = None):
+    def register_perception(self, name: str, description: str, type: str, version: str, category: str = "general", sub_category: str = "general", embedding: Optional[List[float]] = None):
         """Upsert a perception module."""
         import json
         conn = self._get_connection()
@@ -118,15 +124,17 @@ class DatabaseManager:
         emb_json = json.dumps(embedding) if embedding else None
         
         cursor.execute("""
-            INSERT INTO perceptions (name, description, type, version, last_updated, embedding)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            INSERT INTO perceptions (name, description, category, sub_category, type, version, last_updated, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
             ON CONFLICT(name) DO UPDATE SET
                 description=excluded.description,
+                category=excluded.category,
+                sub_category=excluded.sub_category,
                 type=excluded.type,
                 version=excluded.version,
                 last_updated=CURRENT_TIMESTAMP,
                 embedding=COALESCE(excluded.embedding, perceptions.embedding)
-        """, (name, description, type, version, emb_json))
+        """, (name, description, category, sub_category, type, version, emb_json))
         
         conn.commit()
         conn.close()
@@ -179,7 +187,9 @@ class DatabaseManager:
                 else:
                     similarity = dot_product / (query_mag * vec_mag)
                 
-                results.append((similarity, dict(row)))
+                data = dict(row)
+                data['similarity'] = similarity
+                results.append((similarity, data))
             except:
                 continue
                 

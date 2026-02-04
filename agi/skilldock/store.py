@@ -26,6 +26,7 @@ class SkillStore:
                     name TEXT PRIMARY KEY,
                     description TEXT,
                     category TEXT,
+                    sub_category TEXT,
                     json_data TEXT,  -- Full SkillMetadata serialization
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -57,12 +58,13 @@ class SkillStore:
             current_time = "example-timestamp" # Let DB handle it or use python datetime? DB defaults are safer.
             # Actually standard sqlite handling:
             conn.execute("""
-                INSERT OR REPLACE INTO skills (name, description, category, json_data, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT OR REPLACE INTO skills (name, description, category, sub_category, json_data, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 skill_name, 
                 metadata.get("description", ""), 
                 metadata.get("category", "uncategorized"), 
+                metadata.get("sub_category", "uncategorized"),
                 json.dumps(metadata)
             ))
             

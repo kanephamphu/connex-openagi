@@ -30,7 +30,8 @@ class TextAnalyzerSkill(Skill):
             output_schema={
                 "analysis": "str"
             },
-            category="analysis",
+            category="logic",
+            sub_category="nlp",
             timeout=60,
             tests=[
                 SkillTestCase(
@@ -82,7 +83,8 @@ class LLMTextAnalyzerSkill(Skill):
             output_schema={
                 "analysis": "str"
             },
-            category="analysis",
+            category="logic",
+            sub_category="nlp",
             tests=[
                 SkillTestCase(
                     description="Sentiment analysis",

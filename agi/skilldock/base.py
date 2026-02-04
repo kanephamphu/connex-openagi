@@ -35,6 +35,7 @@ class SkillMetadata:
     input_schema: Dict[str, Any]  # Should be a JSON Schema dict
     output_schema: Dict[str, Any]
     category: str = "general"
+    sub_category: str = "general"
     version: str = "0.1.0"
     timeout: int = 30
     config_schema: Optional[Dict[str, Any]] = None  # JSON Schema for required config (API keys, etc.)
@@ -49,6 +50,7 @@ class SkillMetadata:
             "input_schema": self.input_schema,
             "output_schema": self.output_schema,
             "category": self.category,
+            "sub_category": self.sub_category,
             "version": self.version,
             "timeout": self.timeout,
             "config_schema": self.config_schema,

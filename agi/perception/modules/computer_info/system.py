@@ -24,6 +24,8 @@ class ComputerInfoPerception(PerceptionModule):
         return PerceptionMetadata(
             name="computer_info",
             description="Provides detailed local environment information: installed apps, hardware specs, uptime, battery status, WiFi details (SSID/Signal), disk usage, current time, IP address, geographical location, and local weather.",
+            category="system",
+            sub_category="specs",
             version="1.0.0"
         )
 

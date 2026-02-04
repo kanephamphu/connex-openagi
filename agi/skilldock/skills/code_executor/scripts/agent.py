@@ -35,7 +35,8 @@ class CodeExecutorSkill(Skill):
                 "stdout": "str",
                 "stderr": "str"
             },
-            category="execution",
+            category="logic",
+            sub_category="execution",
             timeout=60,
             tests=[
                 SkillTestCase(
@@ -115,7 +116,8 @@ class SafeCodeExecutorSkill(Skill):
                 "stdout": "str",
                 "stderr": "str"
             },
-            category="execution",
+            category="logic",
+            sub_category="execution",
             tests=[
                 SkillTestCase(
                     description="Subprocess print",

@@ -1,4 +1,11 @@
 
+---
+name: computer_info
+description: Provides detailed local environment information.
+category: system
+sub_category: specs
+---
+
 # Computer Info Perception
 
 **Type**: Passive/On-Demand Sensor

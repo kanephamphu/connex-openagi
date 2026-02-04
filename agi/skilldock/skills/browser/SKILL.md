@@ -1,6 +1,8 @@
 ---
 name: browser
 description: Navigate and interact with websites using Playwright
+category: web
+sub_category: navigation
 inputs:
   url:
     type: string

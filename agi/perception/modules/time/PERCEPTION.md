@@ -1,4 +1,11 @@
 
+---
+name: time_sense
+description: Provides time awareness and tick events.
+category: system
+sub_category: context
+---
+
 # Time Perception
 
 **Type**: Passive Sensor

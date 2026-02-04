@@ -1,6 +1,8 @@
 ---
 name: memory
 description: Store and recall information (Semantic Search)
+category: core
+sub_category: management
 inputs:
   action:
     type: string

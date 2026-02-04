@@ -1,6 +1,8 @@
 ---
 name: http_client
 description: HTTP Client for making network requests
+category: web
+sub_category: api
 inputs:
   url:
     type: string

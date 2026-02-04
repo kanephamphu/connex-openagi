@@ -1,6 +1,8 @@
 ---
 name: weather
 description: Get real-time weather information for a location
+category: web
+sub_category: data
 inputs:
   location:
     type: string

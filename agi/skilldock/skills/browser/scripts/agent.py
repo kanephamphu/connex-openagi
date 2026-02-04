@@ -17,6 +17,7 @@ class BrowserSkill(Skill):
             name="browser",
             description="Interact with websites using a real browser to search, research, and investigate. Supports navigation, clicking, typing, and content extraction.",
             category="web",
+            sub_category="navigation",
             version="1.0.0",
             input_schema={
                 "type": "object",

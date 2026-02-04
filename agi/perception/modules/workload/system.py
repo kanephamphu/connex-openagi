@@ -14,6 +14,8 @@ class WorkloadPerception(PerceptionModule):
         return PerceptionMetadata(
             name="workload_monitor",
             description="Perceives CPU, memory usage, and internal task pressure.",
+            category="core",
+            sub_category="state",
             version="1.0.0"
         )
 

@@ -1,4 +1,11 @@
 
+---
+name: intent_drift
+description: Detects if the user's current request diverges from the ongoing task sequence.
+category: core
+sub_category: cognition
+---
+
 # Intent Drift Perception
 
 **Type**: Active Sensor

@@ -1,6 +1,8 @@
 ---
 name: code_executor
 description: Execute Python code
+category: logic
+sub_category: execution
 inputs:
   code:
     type: string

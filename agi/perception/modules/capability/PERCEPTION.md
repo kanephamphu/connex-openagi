@@ -1,4 +1,11 @@
 
+---
+name: capability_scanner
+description: Returns information about registered skills and tools.
+category: meta
+sub_category: skills
+---
+
 # Capability Perception
 
 **Type**: Active Scanner

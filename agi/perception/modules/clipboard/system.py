@@ -14,6 +14,8 @@ class ClipboardPerception(PerceptionModule):
         return PerceptionMetadata(
             name="clipboard_monitor",
             description="Monitors system clipboard for new content.",
+            category="system",
+            sub_category="input",
             version="1.0.0"
         )
         

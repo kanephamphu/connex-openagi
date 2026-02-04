@@ -12,6 +12,8 @@ class CapabilityPerception(PerceptionModule):
         return PerceptionMetadata(
             name="capability_scanner",
             description="Returns information about registered skills and tools.",
+            category="meta",
+            sub_category="skills",
             version="1.0.0"
         )
         
