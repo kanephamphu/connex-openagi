@@ -49,6 +49,15 @@ class SkillStore:
                     FOREIGN KEY(skill_name) REFERENCES skills(name) ON DELETE CASCADE
                 )
             """)
+            
+            # Migration check for new columns
+            cursor = conn.execute("PRAGMA table_info(skills)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if "category" not in columns:
+                conn.execute("ALTER TABLE skills ADD COLUMN category TEXT")
+            if "sub_category" not in columns:
+                conn.execute("ALTER TABLE skills ADD COLUMN sub_category TEXT")
+            
             conn.commit()
             
     def upsert_skill(self, skill_name: str, metadata: Dict[str, Any], embedding: Optional[List[float]] = None):

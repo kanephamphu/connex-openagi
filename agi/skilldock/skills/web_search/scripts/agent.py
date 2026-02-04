@@ -155,7 +155,7 @@ class WebSearchSkill(Skill):
                             self.in_snippet = False
                             self.in_link = False
                             self.count = 0
-
+                        
                         def handle_starttag(self, tag, attrs):
                             attrs_dict = dict(attrs)
                             if tag == "a" and "result-link" in attrs_dict.get("class", ""):
@@ -163,13 +163,13 @@ class WebSearchSkill(Skill):
                                 self.current_result["url"] = attrs_dict.get("href")
                             elif tag == "td" and "result-snippet" in attrs_dict.get("class", ""):
                                 self.in_snippet = True
-
+                        
                         def handle_data(self, data):
                             if self.in_title:
                                 self.current_result["title"] = self.current_result.get("title", "") + data
                             elif self.in_snippet:
                                 self.current_result["snippet"] = self.current_result.get("snippet", "") + data
-
+                        
                         def handle_endtag(self, tag):
                             if tag == "a" and self.in_title:
                                 self.in_title = False
@@ -179,7 +179,7 @@ class WebSearchSkill(Skill):
                                     self.results.append(self.current_result)
                                     self.current_result = {}
                                     self.count += 1
-
+                                    
                     parser = DDGParser()
                     parser.feed(response.text)
                     results = parser.results
@@ -187,7 +187,6 @@ class WebSearchSkill(Skill):
                 if self.config and self.config.get("verbose"):
                     print(f"[WebSearch] DuckDuckGo crawl failed: {e}")
         
-        # Fallback to a simpler mock if still empty (for reliability in closed environments)
         if not results:
              results = [
                 {"title": f"Search result for {query}", "url": f"https://www.google.com/search?q={query}", "snippet": f"Found information about {query}..."}
@@ -251,26 +250,21 @@ class WebSearchSkill(Skill):
             raise ImportError("playwright is not installed. Please add it to requirements.")
             
         results = []
-        # Priority: execution argument -> skill config -> default True
         headless = getattr(self, '_execution_headless', self.config.get("HEADLESS", True))
         
         async with async_playwright() as p:
-            # Firefox is more reliable in some environments
             browser = await p.firefox.launch(headless=headless)
             page = await browser.new_page()
             
-            # Use Google for the browser search
             search_url = f"https://www.google.com/search?q={query}"
             await page.goto(search_url, wait_until="domcontentloaded")
             
-            # Get search result elements
-            # Google results are typically in div.g or div[data-sokp]
             items = await page.query_selector_all("div.g")
             
             for item in items[:num_results]:
                 title_elem = await item.query_selector("h3")
                 link_elem = await item.query_selector("a")
-                snippet_elem = await item.query_selector("div.VwiC3b") # Common snippet class
+                snippet_elem = await item.query_selector("div.VwiC3b")
                 
                 if title_elem and link_elem:
                     title = await title_elem.inner_text()
@@ -287,7 +281,6 @@ class WebSearchSkill(Skill):
             await browser.close()
             
         if not results:
-             # Fallback if selectors changed
              return await self._search_duckduckgo(query, num_results)
              
         return results

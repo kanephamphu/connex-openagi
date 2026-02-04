@@ -185,10 +185,19 @@ class PerceptionLayer:
             if score > 0 or not results_map:
                 final_scores.append((name, score))
                 
-        # Sort by score desc
-        final_scores.sort(key=lambda x: x[1], reverse=True)
+        # 3. Diverse Selection (Highest score per category)
+        best_per_group = {}
+        for name, score in final_scores:
+            module = self._modules.get(name)
+            if not module: continue
+            
+            cat = getattr(module.metadata, 'category', 'general')
+            if cat not in best_per_group or score > best_per_group[cat][1]:
+                best_per_group[cat] = (name, score)
         
-        return [item[0] for item in final_scores[:limit]]
+        # Sort best-of-group results by score
+        diverse_scored = sorted(best_per_group.values(), key=lambda x: x[1], reverse=True)
+        return [item[0] for item in diverse_scored[:limit]]
 
     def get_module(self, name: str) -> Optional[PerceptionModule]:
         return self._modules.get(name)

@@ -301,11 +301,16 @@ class SkillRegistry:
             if score > 0 or not relevant_skills:
                 final_scored_skills.append((skill, score))
         
-        # Sort by boosted score
-        final_scored_skills.sort(key=lambda x: x[1], reverse=True)
+        # 3. Diverse Selection (Highest score per category)
+        best_per_group = {}
+        for skill, score in final_scored_skills:
+            cat = skill.metadata.category
+            if cat not in best_per_group or score > best_per_group[cat][1]:
+                best_per_group[cat] = (skill, score)
         
-        # Take top N
-        selected = [s for s, _ in final_scored_skills[:limit]]
+        # Extract skills and sort by score
+        diverse_scored = sorted(best_per_group.values(), key=lambda x: x[1], reverse=True)
+        selected = [s for s, _ in diverse_scored[:limit]]
                 
         if self.config.verbose:
             names = [s.metadata.name for s in selected]
