@@ -167,7 +167,7 @@ class AGI:
             task = asyncio.create_task(self.orchestrator.execute_plan(plan))
             task.add_done_callback(task_done_callback)
 
-    async def execute(self, goal: str, context: dict | None = None) -> dict:
+    async def execute(self, goal: str, context: dict | None = None, speak_output: bool = False) -> dict:
         """
         Execute a goal using the three-tier AGI system.
         
@@ -189,7 +189,31 @@ class AGI:
             if context:
                 print(f"[AGI] Context: {context}")
 
-        # Tier 1: Plan the actions
+        # --- Intent Routing ---
+        intent = await self.brain.classify_intent(goal)
+        if self.config.verbose:
+            print(f"[AGI] Detected intent: {intent}")
+            
+        if intent == "CHAT":
+            if self.config.verbose:
+                print("[AGI] Handling goal as direct CHAT.")
+            chat_skill = self.skill_registry.get_skill("general_chat")
+            chat_result = await chat_skill.execute(message=goal)
+            reply = chat_result.get("reply", "")
+            
+            if speak_output and reply:
+                speak_skill = self.skill_registry.get_skill("speak")
+                await speak_skill.execute(text=reply)
+
+            return {
+                "success": True,
+                "result": reply,
+                "plan": {"goal": goal, "actions": []},
+                "execution_trace": [],
+                "metadata": {"intent": "CHAT"}
+            }
+
+        # Tier 1: Plan the actions (ACTION intent)
         # Get relevant, enabled skills
         skills = await self.skill_registry.get_relevant_skills(goal)
         plan = await self.planner.create_plan(goal, context or {}, skills)
@@ -204,6 +228,15 @@ class AGI:
         
         if self.config.verbose:
             print(f"[AGI] Execution completed. Success: {result.success}")
+
+        # If we need to speak the final result (for ACTION mode)
+        if speak_output and result.success:
+            # Try to find the last speak output or summarize?
+            # For now, let's just speak the 'result' if it's broad enough
+            final_output = result.output.get("reply") or result.output.get("text") or result.output.get("response")
+            if final_output:
+                speak_skill = self.skill_registry.get_skill("speak")
+                await speak_skill.execute(text=str(final_output))
         
         return {
             "success": result.success,

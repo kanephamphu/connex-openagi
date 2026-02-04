@@ -20,7 +20,8 @@ class AGIInterfaceSkill(Skill):
             input_schema={
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "description": "The natural language goal/command to process"}
+                    "goal": {"type": "string", "description": "The natural language goal/command to process"},
+                    "speak": {"type": "boolean", "description": "Whether to vocalize the final result", "default": True}
                 },
                 "required": ["goal"]
             },
@@ -35,6 +36,7 @@ class AGIInterfaceSkill(Skill):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         goal = kwargs.get("goal")
+        speak = kwargs.get("speak", True)
         if not goal:
             return {"error": "Goal required"}
         
@@ -46,7 +48,7 @@ class AGIInterfaceSkill(Skill):
             except Exception as e:
                 print(f"[AGIInterfaceSkill] Error executing delegated goal: {e}")
 
-        task = asyncio.create_task(self.agi_execute_callback(goal))
+        task = asyncio.create_task(self.agi_execute_callback(goal, speak_output=speak))
         task.add_done_callback(task_done_callback)
         
         return {"status": "submitted", "goal": goal}

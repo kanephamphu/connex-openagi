@@ -80,19 +80,12 @@ class VoiceCommandReflex(ReflexModule):
     async def get_plan(self) -> List[Dict[str, Any]]:
         return [
             {
-                "id": "voice_process_ack",
-                "skill": "speak",
-                "description": "Acknowledge voice command",
-                "inputs": {
-                    "text": "One moment, let me look into that for you..."
-                }
-            },
-            {
                 "id": "delegate_to_brain",
                 "skill": "agi_brain_interface",
                 "description": "Delegating spoken command to the AGI brain for decomposition.",
                 "inputs": {
-                    "goal": self.last_command
+                    "goal": self.last_command,
+                    "speak": True
                 },
                 "depends_on": ["voice_process_ack"]
             }

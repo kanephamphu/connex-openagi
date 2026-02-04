@@ -229,12 +229,20 @@ class GenAIBrain:
         
         prompt = f"""Classify the user's intent as either 'CHAT' or 'ACTION'.
         
-        'CHAT': Greetings, personal questions about the AI, general knowledge questions that don't need tools, or simple conversation.
-        'ACTION': Requests to do something, search the web, analyze data, execute code, manage files, or create something.
+        'CHAT':
+        - Simple greetings: "hello", "hi", "hey".
+        - Personal questions: "who are you?", "how are you?".
+        - Conversational filler: "okay", "thanks", "wow".
+        - General knowledge that DOES NOT require a search: "what is the capital of France?".
+        
+        'ACTION':
+        - Requests to perform tasks: "search the web for...", "create a file...", "open Calculator".
+        - Complex analysis: "analyze this data", "summarize my emails".
+        - Specific tool usage: "take a screenshot", "write some code to...".
         
         User Query: "{query}"
         
-        Respond ONLY with 'CHAT' or 'ACTION'.
+        Respond ONLY with the word 'CHAT' or 'ACTION'.
         """
         
         try:
