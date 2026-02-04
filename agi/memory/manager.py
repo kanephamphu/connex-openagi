@@ -17,9 +17,14 @@ class MemoryManager:
         db_path = getattr(config, 'memory_db_path', "agi_memory.db")
         self.long_term = MemoryEngine(db_path)
         
-        # Short-Term Cache (Volatile, per instance/session)
+        # Conversation Memory (Multi-turn)
+        self.conversation_history: List[Dict[str, str]] = []
+        self.conversation_summary: str = ""
+        self.max_history = 10 
+        
+        # Short-Term Cache (Volatile execution logs)
         self.short_term: List[Dict[str, Any]] = []
-        self.max_short_term = 10 # Keep last 10 interactions in hot cache
+        self.max_short_term = 10
         
     def add_to_short_term(self, goal: str, result: str):
         """Add a recent interaction to context cache."""
@@ -30,6 +35,57 @@ class MemoryManager:
         })
         if len(self.short_term) > self.max_short_term:
             self.short_term.pop(0)
+
+        # Also add to conversation history for multi-turn
+        self.add_message("user", goal)
+        self.add_message("assistant", result)
+
+    def add_message(self, role: str, content: str):
+        """Add a message to the sliding conversation history."""
+        self.conversation_history.append({"role": role, "content": content})
+        if len(self.conversation_history) > self.max_history:
+            self.conversation_history.pop(0)
+            
+    async def update_conversation_summary(self):
+        """
+        Force an update of the conversation summary based on history.
+        """
+        if not self.brain or not self.conversation_history:
+            return
+            
+        history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in self.conversation_history])
+        
+        prompt = f"""Summarize the current conversation state concisely. 
+        Focus on key decisions, unresolved questions, and the general topic.
+        
+        Current History:
+        {history_text}
+        
+        Summary:"""
+        
+        provider, model = self.brain.select_model("fast")
+        client = self.brain.get_client(provider)
+        
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=150
+            )
+            self.conversation_summary = response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"[Memory] Failed to update conversation summary: {e}")
+
+    def get_working_memory(self) -> Dict[str, Any]:
+        """
+        Get the consolidated working memory for prompting.
+        Returns both summary and recent history.
+        """
+        return {
+            "summary": self.conversation_summary or "New conversation.",
+            "recent_history": self.conversation_history
+        }
             
     async def recall(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """

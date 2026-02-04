@@ -68,7 +68,7 @@ class BrowserSkill(Skill):
         text = kwargs.get("text")
         wait_for = kwargs.get("wait_for")
 
-        headless = self.config.get("HEADLESS", True)
+        headless = self.config.get("HEADLESS", False)
         timeout = self.config.get("TIMEOUT", 30000)
 
         results = {"success": False}

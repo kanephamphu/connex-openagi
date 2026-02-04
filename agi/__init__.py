@@ -189,8 +189,16 @@ class AGI:
             if context:
                 print(f"[AGI] Context: {context}")
 
+        # --- NEW: Working Memory Integration ---
+        working_memory = self.memory.get_working_memory()
+        merged_context = {
+            **(context or {}),
+            "conversation_history": working_memory["recent_history"],
+            "conversation_summary": working_memory["summary"]
+        }
+
         # --- Intent Routing ---
-        intent = await self.brain.classify_intent(goal)
+        intent = await self.brain.classify_intent(goal, working_memory)
         if self.config.verbose:
             print(f"[AGI] Detected intent: {intent}")
             
@@ -198,12 +206,17 @@ class AGI:
             if self.config.verbose:
                 print("[AGI] Handling goal as direct CHAT.")
             chat_skill = self.skill_registry.get_skill("general_chat")
-            chat_result = await chat_skill.execute(message=goal)
+            # Pass history to chat skill for better turn-aware replies
+            chat_result = await chat_skill.execute(message=goal, history=working_memory["recent_history"])
             reply = chat_result.get("reply", "")
             
             if speak_output and reply:
                 speak_skill = self.skill_registry.get_skill("speak")
                 await speak_skill.execute(text=reply)
+
+            # Store in memory
+            self.memory.add_to_short_term(goal, reply)
+            asyncio.create_task(self.memory.update_conversation_summary())
 
             return {
                 "success": True,
@@ -216,7 +229,7 @@ class AGI:
         # Tier 1: Plan the actions (ACTION intent)
         # Get relevant, enabled skills
         skills = await self.skill_registry.get_relevant_skills(goal)
-        plan = await self.planner.create_plan(goal, context or {}, skills)
+        plan = await self.planner.create_plan(goal, merged_context, skills)
         
         if self.config.verbose:
             print(f"[AGI] Plan created with {len(plan.actions)} actions.")
@@ -229,14 +242,19 @@ class AGI:
         if self.config.verbose:
             print(f"[AGI] Execution completed. Success: {result.success}")
 
+        # Finalize response
+        final_reply = ""
         # If we need to speak the final result (for ACTION mode)
         if speak_output and result.success:
-            # Try to find the last speak output or summarize?
-            # For now, let's just speak the 'result' if it's broad enough
-            final_output = result.output.get("reply") or result.output.get("text") or result.output.get("response")
-            if final_output:
+            final_reply = str(result.output.get("reply") or result.output.get("text") or result.output.get("response") or "Task completed.")
+            if final_reply:
                 speak_skill = self.skill_registry.get_skill("speak")
-                await speak_skill.execute(text=str(final_output))
+                await speak_skill.execute(text=final_reply)
+
+        # Store in memory
+        self.memory.add_to_short_term(goal, final_reply or str(result.output))
+        asyncio.create_task(self.memory.update_conversation_summary())
+        
         
         return {
             "success": result.success,
@@ -290,8 +308,16 @@ class AGI:
             if self.config.verbose:
                 print("[AGI] Reasoning complete. Classifying intent...")
 
+            # --- NEW: Working Memory ---
+            working_memory = self.memory.get_working_memory()
+            merged_context = {
+                **(context or {}),
+                "conversation_history": working_memory["recent_history"],
+                "conversation_summary": working_memory["summary"]
+            }
+
             # --- Intent Classification ---
-            intent = await self.brain.classify_intent(goal)
+            intent = await self.brain.classify_intent(goal, working_memory)
             if self.config.verbose:
                 print(f"[AGI] Detected intent: {intent}")
                 
@@ -301,10 +327,20 @@ class AGI:
                 provider, model = self.brain.select_model("fast")
                 client = self.brain.get_client(provider)
                 
+                # Direct Chat with history
+                chat_messages = []
+                if working_memory["summary"]:
+                    chat_messages.append({"role": "system", "content": f"Conversation Summary: {working_memory['summary']}"})
+                
+                for msg in working_memory["recent_history"]:
+                    chat_messages.append(msg)
+                
+                chat_messages.append({"role": "user", "content": goal})
+
                 # Streaming response generation
                 stream = await client.chat.completions.create(
                     model=model,
-                    messages=[{"role": "user", "content": goal}],
+                    messages=chat_messages,
                     temperature=0.7,
                     max_tokens=800,
                     stream=True
@@ -321,11 +357,12 @@ class AGI:
                             "action_id": "chat_response",
                             "output": {"reply": content}
                         }
-                        # Only append the final complete event to trace, or streamed?
-                        # For chat, we might want just the final answer in history.
-                        # But loop needs to yield tokens.
                         yield evt
                 
+                # Store final in memory
+                self.memory.add_to_short_term(goal, content)
+                asyncio.create_task(self.memory.update_conversation_summary())
+
                 # Append final result to trace
                 full_trace.append({
                     "phase": "execution",
@@ -343,7 +380,7 @@ class AGI:
             skills = await self.skill_registry.get_relevant_skills(goal)
             
             final_plan = None
-            async for update in self.planner.create_plan_streaming(goal, context or {}, skills):
+            async for update in self.planner.create_plan_streaming(goal, merged_context, skills):
                 if update.get("type") == "planning_started":
                     continue # Already yielded initial planning start
                 if "plan" in update and hasattr(update["plan"], "to_dict"):

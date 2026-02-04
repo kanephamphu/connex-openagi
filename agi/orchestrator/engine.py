@@ -111,6 +111,12 @@ class Orchestrator:
                             failed_inputs = result.metadata.get("inputs", {})
                         
                         if self.config.verbose:
+                            # CancelledError has no string representation often
+                            if isinstance(result, asyncio.CancelledError):
+                                error_msg = "Task was cancelled (likely a timeout)"
+                            else:
+                                error_msg = str(result) if isinstance(result, Exception) else result.error
+                                
                             print(f"[Orchestrator] Action {action_id} failed: {error_msg}")
                         
                         # --- SELF CORRECTION ---
@@ -136,9 +142,26 @@ class Orchestrator:
                                 # Retry with fixed inputs (bypass standard execution wrapper to inject inputs)
                                 try:
                                     skill = self.skill_registry.get_skill(action.skill)
+                                    
+                                    # Sanitize fixed_inputs: only keep keys defined in skill's input schema
+                                    # or allow standard ones if schema is loose.
+                                    input_schema = skill.metadata.input_schema
+                                    valid_keys = []
+                                    if isinstance(input_schema, dict):
+                                        valid_keys = list(input_schema.get("properties", {}).keys())
+                                        if not valid_keys and "type" not in input_schema:
+                                            valid_keys = list(input_schema.keys())
+                                            
+                                    sanitized_inputs = fixed_inputs
+                                    if valid_keys:
+                                        sanitized_inputs = {k: v for k, v in fixed_inputs.items() if k in valid_keys}
+                                    
+                                    if self.config.verbose and sanitized_inputs != fixed_inputs:
+                                        print(f"[Orchestrator] Sanitized inputs for retry: {sanitized_inputs}")
+
                                     # Execute with timeout
                                     output = await asyncio.wait_for(
-                                        skill.execute(**fixed_inputs),
+                                        skill.execute(**sanitized_inputs),
                                         timeout=action.metadata.get("timeout", self.config.action_timeout)
                                     )
                                     
@@ -232,7 +255,8 @@ class Orchestrator:
             duration = time.time() - start_time
             
             if self.config.verbose:
-                print(f"[Orchestrator] Execution failed: {e}")
+                err_str = str(e) or e.__class__.__name__
+                print(f"[Orchestrator] Execution failed: {err_str}")
             
             return ExecutionResult(
                 success=False,
@@ -299,13 +323,22 @@ class Orchestrator:
                 raise e
             
             # NEW: Validate inputs according to metadata schema
-            await skill.validate_inputs(**inputs)
+            try:
+                await skill.validate_inputs(**inputs)
+            except Exception as v_err:
+                 raise Exception(f"Input validation failed for '{action.skill}': {v_err}")
             
             # Execute with timeout
-            output = await asyncio.wait_for(
-                skill.execute(**inputs),
-                timeout=action.metadata.get("timeout", self.config.action_timeout)
-            )
+            try:
+                output = await asyncio.wait_for(
+                    skill.execute(**inputs),
+                    timeout=action.metadata.get("timeout", self.config.action_timeout)
+                )
+            except asyncio.TimeoutError:
+                raise Exception(f"Action '{action.id}' timed out after {action.metadata.get('timeout', self.config.action_timeout)}s")
+            except asyncio.CancelledError:
+                # Re-raise so orchestrator knows it was a cancellation
+                raise
             
             # Smart Validate & Map output
             if action.output_schema:
@@ -365,7 +398,7 @@ class Orchestrator:
             print(f"\n[Orchestrator] Self-correction: Replanning after failure at {failed_action}")
         
         # Import planner (circular dependency workaround)
-        from agi.planner.deepseek import DeepSeekPlanner
+        from agi.planner import Planner
         import inspect
 
         # Try to get skill source path to enable self-repair
@@ -380,10 +413,13 @@ class Orchestrator:
         except Exception:
             pass
 
-        planner = DeepSeekPlanner(self.config)
+        planner = Planner(self.config)
         
         # Build enhanced context with file path
         context_extras = {"skill_file_path": skill_file_path} if skill_file_path else {}
+
+        # Get relevant skills for the new goal
+        skills = await self.skill_registry.get_relevant_skills(plan.goal)
 
         # Create new plan for remaining work
         new_plan = await planner.replan(
@@ -391,6 +427,7 @@ class Orchestrator:
             failed_step=failed_action,
             error=error,
             completed_steps=state.completed,
+            skills=skills,
             **context_extras
         )
         

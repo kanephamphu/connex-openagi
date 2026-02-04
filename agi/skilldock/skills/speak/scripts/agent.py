@@ -5,6 +5,7 @@ import subprocess
 from typing import Any, Dict, List
 from gtts import gTTS
 from agi.skilldock.base import Skill, SkillMetadata
+import asyncio
 
 class SpeakSkill(Skill):
     """
@@ -56,8 +57,17 @@ class SpeakSkill(Skill):
             # For cross-platform, we'd check OS, but task specified mac.
             if self.agi_config and getattr(self.agi_config, 'verbose', False):
                 print(f"[SpeakSkill] Playing audio: {text[:50]}...")
+            
+            # Set global speaking flag to mute 'Ear' sensor
+            if self.agi_config:
+                self.agi_config.is_speaking = True
                 
-            subprocess.run(["afplay", temp_path], check=True)
+            try:
+                process = await asyncio.create_subprocess_exec("afplay", temp_path)
+                await process.wait()
+            finally:
+                if self.agi_config:
+                    self.agi_config.is_speaking = False
             
             # Clean up? Maybe keep for a bit or return path.
             # We'll return path and let system clean up or user handle it.

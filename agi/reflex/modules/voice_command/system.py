@@ -87,6 +87,5 @@ class VoiceCommandReflex(ReflexModule):
                     "goal": self.last_command,
                     "speak": True
                 },
-                "depends_on": ["voice_process_ack"]
             }
         ]

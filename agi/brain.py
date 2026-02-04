@@ -127,6 +127,10 @@ class GenAIBrain:
         Goal: "{goal}"
         Context: {json.dumps(context or {})}
 
+        ### CONVERSATION CONTEXT
+        Summary: {context.get('conversation_summary', 'None')}
+        Recent Turns: {json.dumps(context.get('conversation_history', []))}
+        
         Perform a deep 'Inner Monologue' before taking action. Structured your thoughts:
         1. **Core Objective**: What does the user *actually* want? (Interpret intent beyond words)
         2. **Capability Check**: Which specific skills/tools are best suited? (e.g., 'browser' for research, 'code_executor' for calc)
@@ -217,7 +221,7 @@ class GenAIBrain:
         # Default fallback
         return self._get_default_provider_and_model()
 
-    async def classify_intent(self, query: str) -> str:
+    async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
         Classify the user intent into CHAT or ACTION.
         
@@ -240,6 +244,10 @@ class GenAIBrain:
         - Complex analysis: "analyze this data", "summarize my emails".
         - Specific tool usage: "take a screenshot", "write some code to...".
         
+        ### CONVERSATION CONTEXT
+        Summary: {(context or {}).get('summary', 'None')}
+        Recent History: {json.dumps((context or {}).get('recent_history', []))}
+
         User Query: "{query}"
         
         Respond ONLY with the word 'CHAT' or 'ACTION'.

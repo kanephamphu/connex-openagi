@@ -45,6 +45,7 @@ class AGIConfig:
     max_retries: int = 3
     action_timeout: int = 60
     self_correction_enabled: bool = True
+    is_speaking: bool = False  # NEW: Global flag to prevent self-triggering via Mic
     
     # Model-specific settings
     planner_model: str = "deepseek-reasoner"

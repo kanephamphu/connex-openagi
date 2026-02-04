@@ -201,7 +201,9 @@ class Planner(ABC):
         original_plan: ActionPlan,
         failed_step: str,
         error: str,
-        completed_steps: List[str]
+        completed_steps: List[str],
+        skills: List[Any],
+        **kwargs
     ) -> ActionPlan:
         """
         Re-plan remaining actions after a failure.
@@ -227,9 +229,12 @@ class Planner(ABC):
             ]
         }
         
+        # Add additional extras
+        replan_context.update(kwargs)
+        
         # Create new plan
         new_goal = f"Continue working on: {original_plan.goal}\n"
         new_goal += f"Previous attempt failed at step '{failed_step}' with error: {error}\n"
         new_goal += f"Completed steps: {', '.join(completed_steps)}"
         
-        return await self.create_plan(new_goal, replan_context)
+        return await self.create_plan(new_goal, replan_context, skills)
