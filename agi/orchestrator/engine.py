@@ -170,11 +170,33 @@ class Orchestrator:
                             step_result = result if isinstance(result, StepResult) else StepResult(action_id, False, str(result))
                             state.mark_failed(action_id, step_result)
                             
-                            if self.config.self_correction_enabled:
-                                # Fallback to heavy replan
-                                return await self._handle_failure(plan, state, action_id, error_msg)
-                            else:
+                            # Get action node to check priority
+                            try:
+                                action = next(a for a in plan.actions if a.id == action_id)
+                            except StopIteration:
+                                # Should not happen
                                 raise Exception(error_msg)
+                                
+                            priority = getattr(action, "priority", "MAJOR")
+                            
+                            if priority == "MAJOR":
+                                if self.config.self_correction_enabled:
+                                    # Fallback to heavy replan
+                                    try:
+                                        return await self._handle_failure(plan, state, action_id, error_msg)
+                                    except Exception as replan_err:
+                                         raise Exception(f"MAJOR step '{action_id}' failed and replan failed: {error_msg}. (Replan error: {replan_err})")
+                                else:
+                                    raise Exception(f"MAJOR step '{action_id}' failed: {error_msg}")
+                            elif priority == "SKIPPABLE":
+                                if self.config.verbose:
+                                    print(f"[Orchestrator] SKIPPABLE step '{action_id}' failed/skipped. No impact on goal. Error: {error_msg}")
+                                continue
+                            else: # MINOR
+                                if self.config.verbose or True: # Always log minor failures for now
+                                    print(f"[Orchestrator] MINOR step '{action_id}' failed. Continuing remaining independent actions. Error: {error_msg}")
+                                # Just continue the loop - dependencies of this minor step will be skipped automatically
+                                continue
 
                     else:
                         # Action succeeded
@@ -256,14 +278,13 @@ class Orchestrator:
         inputs = {}
         
         try:
-            # Resolve inputs
-            inputs = self.mapper.resolve_inputs(action, state)
+            # Resolve inputs (with smart remapping)
+            # We get the skill first to allow mapper to use its schema
+            skill = self.skill_registry.get_skill(action.skill)
+            inputs = self.mapper.resolve_inputs(action, state, skill)
             
             if self.config.verbose:
                 print(f"[Orchestrator] Executing {action.id} ({action.skill})")
-            
-            # Get skill from registry
-            skill = self.skill_registry.get_skill(action.skill)
             
             # Check if enabled
             if isinstance(skill.config, dict):
@@ -277,15 +298,23 @@ class Orchestrator:
                 # Rethrow to be caught by streaming or handle loop
                 raise e
             
+            # NEW: Validate inputs according to metadata schema
+            await skill.validate_inputs(**inputs)
+            
             # Execute with timeout
             output = await asyncio.wait_for(
                 skill.execute(**inputs),
                 timeout=action.metadata.get("timeout", self.config.action_timeout)
             )
             
-            # Validate output
+            # Smart Validate & Map output
             if action.output_schema:
-                self.mapper.validate_output(output, action.output_schema)
+                output = self.mapper.validate_output(output, action.output_schema, action.id)
+            
+            # If skill returned explicit success=False, treat as execution error
+            if isinstance(output, dict) and output.get("success") is False:
+                error_msg = output.get("message") or output.get("error") or "Skill reports failure without message"
+                raise Exception(error_msg)
             
             duration = time.time() - start_time
             

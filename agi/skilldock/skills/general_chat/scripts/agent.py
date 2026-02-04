@@ -35,7 +35,8 @@ class GeneralChatSkill(Skill):
                 "required": ["message"]
             },
             output_schema={
-                "reply": "str"
+                "reply": "str",
+                "response": "str"
             },
             category="foundation",
             timeout=60,
@@ -48,11 +49,16 @@ class GeneralChatSkill(Skill):
             ]
         )
     
-    async def execute(self, message: str, history: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    async def execute(self, message: str, history: Optional[List[Dict]] = None, **kwargs) -> Dict[str, Any]:
         """
         Generate a conversational reply.
         """
-        await self.validate_inputs(message=message)
+        # message is now guaranteed to be present and a string by the base class validation
+        # because it's marked as required in SKILL.md and injected into metadata.
+        # But for robustness against direct calls without orchestrator:
+        final_message = message or kwargs.get("text")
+        if not final_message:
+             raise ValueError("Message must be provided.")
         
         # Select appropriate model (Creative or Fast is usually best for chat)
         # We'll use CREATIVE for better personality or FAST for speed
@@ -69,7 +75,7 @@ class GeneralChatSkill(Skill):
         messages = history or []
         # Convert history if needed (simplified here, assuming list of dicts with role/content)
         # For this foundation skill, we'll just append the new message
-        messages.append({"role": "user", "content": message})
+        messages.append({"role": "user", "content": final_message})
         
         try:
             # Revisit BrainPlanner's _call_model logic - ideally Brain should expose this method publicly
@@ -80,12 +86,14 @@ class GeneralChatSkill(Skill):
             
             return {
                 "reply": reply,
+                "response": reply,
                 "model_used": f"{provider}/{model}"
             }
             
         except Exception as e:
             return {
                 "reply": f"I apologized, but I encountered an error responding: {str(e)}",
+                "response": f"I apologized, but I encountered an error responding: {str(e)}",
                 "error": str(e)
             }
 

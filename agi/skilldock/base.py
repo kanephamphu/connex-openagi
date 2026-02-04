@@ -92,21 +92,14 @@ class Skill(ABC):
     
     async def validate_inputs(self, **kwargs):
         """
-        Validate inputs before execution.
+        Validate inputs before execution against the input_schema.
         
-        Args:
-            **kwargs: Input parameters
-            
         Raises:
             ValueError: If validation fails
         """
-    async def validate_inputs(self, **kwargs):
-        """
-        Validate inputs before execution.
-        """
         schema = self.metadata.input_schema
         
-        # Check if this is a JSON Schema (has 'properties' or 'type': 'object')
+        # Check if this is a JSON Schema (standardized format)
         is_json_schema = "properties" in schema or schema.get("type") == "object"
         
         if is_json_schema:
@@ -115,7 +108,17 @@ class Skill(ABC):
             for param in required:
                 if param not in kwargs:
                     raise ValueError(f"Missing required parameter: {param}")
-            # Could add stricter type checking using jsonschema library here
+            
+            # Type checking
+            for param, value in kwargs.items():
+                if param in properties:
+                    expected_type = properties[param].get("type")
+                    if expected_type == "string" and not isinstance(value, str):
+                        raise ValueError(f"Incorrect type for '{param}'. Expected string, got {type(value).__name__}")
+                    elif expected_type == "integer" and not isinstance(value, int):
+                        raise ValueError(f"Incorrect type for '{param}'. Expected integer, got {type(value).__name__}")
+                    elif expected_type == "array" and not isinstance(value, list):
+                        raise ValueError(f"Incorrect type for '{param}'. Expected array, got {type(value).__name__}")
         else:
             # Legacy simplified schema {param: type_str}
             for param, type_str in schema.items():

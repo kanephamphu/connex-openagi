@@ -61,6 +61,9 @@ class AGIConfig:
     allow_skill_publishing: bool = False
     allow_skill_isolation: bool = False
     skills_data_path: str = "skill_data"
+    data_dir: str = "data"
+    perception_storage_path: str = "installed_perception"
+    reflex_storage_path: str = "installed_reflex"
     
     @classmethod
     def from_env(cls) -> "AGIConfig":
@@ -70,7 +73,7 @@ class AGIConfig:
         Returns:
             AGIConfig instance populated from .env file
         """
-        return cls(
+        instance = cls(
             deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
             deepseek_api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
@@ -93,7 +96,28 @@ class AGIConfig:
             max_retries=int(os.getenv("AGI_MAX_RETRIES", "3")),
             action_timeout=int(os.getenv("AGI_ACTION_TIMEOUT", "60")),
             self_correction_enabled=os.getenv("AGI_SELF_CORRECTION_ENABLED", "true").lower() == "true",
+            data_dir=os.getenv("AGI_DATA_DIR", "data"),
+            perception_storage_path=os.getenv("AGI_PERCEPTION_STORAGE", "installed_perception"),
+            reflex_storage_path=os.getenv("AGI_REFLEX_STORAGE", "installed_reflex"),
         )
+        
+        # Load overlays from Database
+        try:
+            from agi.utils.database import DatabaseManager
+            db = DatabaseManager()
+            db_config = db.get_all_config()
+            
+            # Apply DB overrides
+            for key, value in db_config.items():
+                if hasattr(instance, key) and value is not None:
+                    # Convert types if necessary (DB stores JSON/Strings)
+                    # For now assume mostly compatible or string
+                    setattr(instance, key, value)
+        except Exception as e:
+            # Fallback if DB fails (e.g. migration issue or locked)
+            pass
+            
+        return instance
     
     def get_planner_client(self, planner_type: PlannerType | None = None):
         """

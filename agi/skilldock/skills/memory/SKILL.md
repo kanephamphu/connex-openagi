@@ -1,6 +1,17 @@
 ---
 name: memory
-description: Store and recall information (Semantic Semantic Search)
+description: Store and recall information (Semantic Search)
+inputs:
+  action:
+    type: string
+    description: "Supported actions: 'store', 'recall', 'list'"
+  content:
+    type: string
+    description: "Specific content to store OR search query to recall"
+outputs:
+  result:
+    type: string
+    description: Search result or operation status
 ---
 
 # Semantic Memory Skill ("The Soul")

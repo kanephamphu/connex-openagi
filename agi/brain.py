@@ -108,9 +108,21 @@ class GenAIBrain:
         
         if self.config.verbose:
             print(f"[Brain] Reasoning with {provider}/{model}...")
-            
+        
+        # Load Constitution (The Soul)
+        soul_path = os.path.join(os.path.dirname(__file__), "SOUL.md")
+        soul_content = ""
+        if os.path.exists(soul_path):
+            with open(soul_path, "r") as f:
+                soul_content = f.read()
+
         prompt = f"""You are the 'Reasoning Engine' of an autonomous AGI.
         Your goal is to analyze the user's request and devise a robust, efficient strategy.
+        
+        ### CONNECTED CONSTITUTION (THE SOUL)
+        You MUST adhere to the following principles:
+        {soul_content}
+        ### END CONSTITUTION
 
         Goal: "{goal}"
         Context: {json.dumps(context or {})}

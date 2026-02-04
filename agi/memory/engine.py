@@ -117,3 +117,23 @@ class MemoryEngine:
             } 
             for r in rows
         ]
+
+    def get_by_date_range(self, start_ts: float, end_ts: float) -> List[Dict[str, Any]]:
+        """Fetch memories within a specific time range."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute(
+            'SELECT id, content, metadata_json, timestamp FROM memories WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC',
+            (start_ts, end_ts)
+        )
+        rows = c.fetchall()
+        conn.close()
+        return [
+            {
+                "id": r[0], 
+                "content": r[1], 
+                "metadata": json.loads(r[2]), 
+                "timestamp": r[3]
+            } 
+            for r in rows
+        ]

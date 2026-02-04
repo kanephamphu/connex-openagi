@@ -57,40 +57,8 @@ class SkillRegistry:
         # But _load_dynamic_skill expects a directory with agent.py. 
         # For flat files we need standard import.
         
-        # Legacy static imports (only if not found by scanner?)
-        # To avoid duplicates, we'll let the scanner do the work. 
-        # Once we migrate files to folders, scanner picks them up.
-        # Until then, we keep the imports but wrap them in try blocks or check existence?
-        # Simpler: We are about to migrate ALL of them. So I can remove the static imports now.
-        # But if I remove them BEFORE migrating files, the system breaks.
-        # So I will keep them but suppress errors if they fail (e.g. file moved).
-        try:
-            from agi.skilldock.skills.web_search import WebSearchSkill
-            self.register(WebSearchSkill())
-        except ImportError: pass
-        
-        try:
-            from agi.skilldock.skills.http_client import HTTPGetSkill, HTTPPostSkill
-            self.register(HTTPGetSkill())
-            self.register(HTTPPostSkill())
-        except ImportError: pass
-        
-        try:
-            from agi.skilldock.skills.code_executor import CodeExecutorSkill, SafeCodeExecutorSkill
-            self.register(CodeExecutorSkill())
-            self.register(SafeCodeExecutorSkill())
-        except ImportError: pass
-        
-        try:
-            from agi.skilldock.skills.text_analyzer import TextAnalyzerSkill, LLMTextAnalyzerSkill
-            self.register(TextAnalyzerSkill(self.config))
-            self.register(LLMTextAnalyzerSkill(self.config))
-        except ImportError: pass
-        
-        try:
-            from agi.skilldock.skills.skill_creator import SkillCreatorSkill
-            self.register(SkillCreatorSkill(self.config))
-        except ImportError: pass
+        # Built-in skills are now discovered dynamically by the scanner above.
+        # No need for static imports here.
         
         if self.config.verbose:
             print(f"[SkillRegistry] Loaded {len(self._skills)} skills")
@@ -240,14 +208,23 @@ class SkillRegistry:
         if self.config.verbose:
             print(f"[SkillRegistry] Updated config for {skill_name}: {new_config}")
     
-    def list_skills(self) -> List[SkillMetadata]:
+    def list_skills(self, include_disabled: bool = False) -> List[SkillMetadata]:
         """
         List all registered skills.
         
+        Args:
+            include_disabled: Whether to include skills that are disabled by user
+            
         Returns:
             List of skill metadata
         """
-        return [skill.metadata for skill in self._skills.values()]
+        if include_disabled:
+            return [skill.metadata for skill in self._skills.values()]
+        
+        return [
+            skill.metadata for skill in self._skills.values()
+            if not isinstance(skill.config, dict) or skill.config.get("enabled", True)
+        ]
     def get_skills_by_category(self, category: str) -> List[Skill]:
         """
         Get all skills in a category.
@@ -292,7 +269,10 @@ class SkillRegistry:
         for meta, score in results:
             name = meta.get("name")
             if name in self._skills:
-                relevant_skills.append(self._skills[name])
+                skill = self._skills[name]
+                # Filter out disabled skills
+                if not isinstance(skill.config, dict) or skill.config.get("enabled", True):
+                    relevant_skills.append(skill)
                 
         if self.config.verbose:
             names = [s.metadata.name for s in relevant_skills]
@@ -485,6 +465,32 @@ class SkillRegistry:
                         else:
                             skill_instance = attr()
                             
+                        # NEW: Inject Schema from SKILL.md if checks pass
+                        skill_md_path = os.path.join(directory, "SKILL.md")
+                        if os.path.exists(skill_md_path):
+                            try:
+                                import yaml
+                                with open(skill_md_path, "r") as f:
+                                    content = f.read()
+                                    # Extract YAML frontmatter
+                                    if content.startswith("---"):
+                                        _, frontmatter, _ = content.split("---", 2)
+                                        metadata = yaml.safe_load(frontmatter)
+                                        
+                                        # Update inputs/outputs in metadata
+                                        if "inputs" in metadata:
+                                             skill_instance.metadata.input_schema = {
+                                                 "type": "object",
+                                                 "properties": metadata["inputs"],
+                                                 "required": [k for k, v in metadata["inputs"].items() if v.get("required") != False]
+                                             }
+                                        if "outputs" in metadata:
+                                             skill_instance.metadata.output_schema = {
+                                                 k: v.get("type", "string") for k,v in metadata["outputs"].items()
+                                             }
+                            except Exception as e:
+                                print(f"[SkillRegistry] Failed to parse SKILL.md for {module_name}: {e}")
+
                         self.register(skill_instance)
                         loaded_count += 1
                     except Exception as e:

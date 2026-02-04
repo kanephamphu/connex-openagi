@@ -1,6 +1,17 @@
 ---
 name: text_analyzer
 description: Analyze text using LLMs
+inputs:
+  text:
+    type: string
+    description: The text content to analyze
+  task:
+    type: string
+    description: "Analysis task: 'summarize', 'key_points', 'sentiment', 'translate'"
+outputs:
+  analysis:
+    type: string
+    description: The result of the analysis
 ---
 
 # Text Analyzer Skill

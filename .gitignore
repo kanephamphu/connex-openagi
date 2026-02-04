@@ -1,0 +1,25 @@
+
+# Python
+*__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / assembling
+dist/
+build/
+*.egg-info/
+
+# Virtual Environments
+venv/
+env/
+.env
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# AGI Data
+data/
+agi_memory.db
+*.db

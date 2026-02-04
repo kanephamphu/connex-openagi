@@ -1,6 +1,14 @@
 ---
 name: web_search
 description: Search the web for information
+inputs:
+  query:
+    type: string
+    description: The search query
+outputs:
+  results:
+    type: array
+    description: List of search results
 ---
 
 # Web Search Skill

@@ -33,6 +33,12 @@ class ActionNodeSchema(BaseModel):
         description="Action IDs that must complete first"
     )
 
+    priority: str = Field(
+        default="MAJOR",
+        enum=["MAJOR", "MINOR", "SKIPPABLE"],
+        description="Step priority (MAJOR, MINOR, SKIPPABLE). MAJOR: Critical. MINOR: Helpful. SKIPPABLE: Optional/Auxiliary, skip on any issue or for cost-saving."
+    )
+
 
 class ActionPlanSchema(BaseModel):
     """
@@ -67,14 +73,18 @@ You must ONLY use the following skills. Do not invent new ones.
 
 # Planning Guidelines
 
-1. **Decompose Thoroughly**: Break complex tasks into small, focused actions.
-2. **Define Dependencies**: Use `depends_on` to ensure proper ordering.
-3. **Specify I/O**: Clearly define what each action produces and consumes.
-4. **Use References**: Connect actions using `input_refs` (e.g., `{{"text": "action_1.results"}}`).
-5. **Chat vs Action**: If the user just says "Hello" or asks a question, use `general_chat` (if available).
-6. **Files**: Use `file_manager` for reading/writing, NOT python code `open()`.
-7. **Strict Parameters**: You MUST use the exact input parameter names listed in the skill definition. Do not invent keys like 'key' or 'action' if they are not in the schema.
-8. **Skill Repair**: If `skill_file_path` is provided in context (due to an error), you represent the IMMUNE SYSTEM. You MUST:
+1. **COST OPTIMIZATION - FEWEST STEPS**: You are a cost-focused planner. Create the **leanest possible plan** to achieve the goal. Minimize the number of skill calls. If one task can be inferred or combined into another, do it. Avoid redundant information gathering.
+2. **Decompose Thoroughly**: Break complex tasks into small, focused actions, but only as many as strictly necessary.
+3. **Define Dependencies**: Use `depends_on` to ensure proper ordering.
+4. **Step Priority (Strictly assign one)**:
+   - `MAJOR`: Critical core logic. Failure = Goal Failure.
+   - `MINOR`: Enhancements. Failure = Warning, but continue.
+   - `SKIPPABLE`: Non-essential/Auxiliary steps (e.g., logging, extra confirmation). These can be ignored if they add unnecessary cost or fail.
+5. **Specify I/O**: Clearly define what each action produces and consumes.
+6. **Use References**: Connect actions using `input_refs`.
+7. **Direct Outcome**: Prefer direct actions over multi-step verification if the risk is low.
+8. **Strict Parameters**: You MUST use the exact input parameter names listed in the skill definition. Do not invent keys like 'key' or 'action' if they are not in the schema.
+9. **Skill Repair**: If `skill_file_path` is provided in context (due to an error), you represent the IMMUNE SYSTEM. You MUST:
    a. Use `file_manager` to READ the file.
    b. Identify the bug in your internal monologue.
    c. Use `file_manager` to WRITE the corrected code back to the file.

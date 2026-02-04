@@ -5,7 +5,7 @@ Script to generate local example skills using the SkillCreatorSkill.
 import asyncio
 import os
 from agi import AGI, AGIConfig
-from agi.skilldock.skills.skill_creator import SkillCreatorSkill
+from agi.skilldock.skills.skill_creator.scripts.agent import SkillCreatorSkill
 
 # 1. Weather Skill
 WEATHER_CODE = """

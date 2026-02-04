@@ -42,6 +42,9 @@ export default function RootLayout({
           <a href="/history" className="px-4 py-2 hover:bg-neutral-800 rounded-lg transition-colors flex items-center gap-2">
             <span>📜</span> History
           </a>
+          <a href="/settings" className="px-4 py-2 hover:bg-neutral-800 rounded-lg transition-colors flex items-center gap-2">
+            <span>⚙️</span> Settings
+          </a>
         </nav>
 
         {/* Main Content */}

@@ -41,6 +41,11 @@ class ActionNode(BaseModel):
         description="IDs of actions that must complete before this one"
     )
     
+    priority: str = Field(
+        default="MAJOR",
+        description="Priority of this step (MAJOR, MINOR, SKIPPABLE)"
+    )
+    
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata (timeout, retries, etc.)"
@@ -159,20 +164,21 @@ class Planner(ABC):
         self.client = config.get_planner_client()
     
     @abstractmethod
-    async def create_plan(self, goal: str, context: dict) -> ActionPlan:
+    async def create_plan(self, goal: str, context: dict, skills: List[Any]) -> ActionPlan:
         """
         Create an action plan from a user goal.
         
         Args:
             goal: Natural language description of what to accomplish
             context: Additional context and constraints
+            skills: List of available skills (Skill or SkillMetadata)
             
         Returns:
             ActionPlan with structured action sequence
         """
         pass
     
-    async def create_plan_streaming(self, goal: str, context: dict):
+    async def create_plan_streaming(self, goal: str, context: dict, skills: List[Any]):
         """
         Create a plan with streaming of reasoning process.
         
@@ -184,7 +190,7 @@ class Planner(ABC):
             Progress updates including reasoning steps and partial plans
         """
         # Default implementation: create plan and yield final result
-        plan = await self.create_plan(goal, context)
+        plan = await self.create_plan(goal, context, skills)
         yield {
             "type": "plan_complete",
             "plan": plan,

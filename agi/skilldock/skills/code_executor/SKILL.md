@@ -1,6 +1,18 @@
 ---
 name: code_executor
 description: Execute Python code
+inputs:
+  code:
+    type: string
+    description: The Python code to execute
+outputs:
+  result:
+    type: string
+    description: The output of the code execution
+  error:
+    type: string
+    description: Error message if execution failed
+    required: false
 ---
 
 # Code Executor Skill

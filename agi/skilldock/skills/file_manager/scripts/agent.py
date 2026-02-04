@@ -25,15 +25,15 @@ class FileManagerSkill(Skill):
             input_schema={
                 "type": "object",
                 "properties": {
-                    "operation": {
+                    "action": {
                         "type": "string", 
                         "enum": ["read_file", "write_file", "list_directory"],
-                        "description": "Operation to perform"
+                        "description": "Action to perform"
                     },
                     "path": {"type": "string", "description": "Relative path to file or directory"},
                     "content": {"type": "string", "description": "Content to write (for write_file)"}
                 },
-                "required": ["operation", "path"]
+                "required": ["action", "path"]
             },
             output_schema={
                 "success": "bool",
@@ -55,32 +55,32 @@ class FileManagerSkill(Skill):
             ]
         )
     
-    async def execute(self, operation: str = None, path: str = None, content: str = "", **kwargs) -> Dict[str, Any]:
+    async def execute(self, action: str = None, path: str = None, content: str = "", **kwargs) -> Dict[str, Any]:
         """
         Execute file operation.
         """
         # Handle aliases from LLM hallucinations
-        if not operation:
-            operation = kwargs.get("action")
+        if not action:
+            action = kwargs.get("operation")
         
         if not path:
             path = kwargs.get("file_name") or kwargs.get("key") or kwargs.get("filename") or kwargs.get("file_path")
 
         # Validate after aliasing
-        if not operation:
-             return {"success": False, "message": "Missing 'operation' (or 'action')"}
+        if not action:
+             return {"success": False, "message": "Missing 'action' (or 'operation')"}
         if not path:
              return {"success": False, "message": "Missing 'path' (or 'file_name', 'key')"}
 
         # Map 'write' to 'write_file' if needed
-        if operation == "write":
-            operation = "write_file"
-        elif operation == "read":
-            operation = "read_file"
-        elif operation == "list":
-            operation = "list_directory"
+        if action == "write":
+            action = "write_file"
+        elif action == "read":
+            action = "read_file"
+        elif action == "list":
+            action = "list_directory"
             
-        await self.validate_inputs(operation=operation, path=path)
+        await self.validate_inputs(action=action, path=path)
         
         # Security check: Ensure path is within workspace (simple check)
         # In a real system, you'd use os.path.abspath and commonprefix
@@ -93,7 +93,7 @@ class FileManagerSkill(Skill):
         full_path = path # relative to CWD
         
         try:
-            if operation == "read_file":
+            if action == "read_file":
                 if not os.path.exists(full_path):
                     return {"success": False, "message": f"File not found: {path}"}
                 
@@ -106,7 +106,7 @@ class FileManagerSkill(Skill):
                     "file_content": data
                 }
             
-            elif operation == "write_file":
+            elif action == "write_file":
                 # Ensure dir exists
                 os.makedirs(os.path.dirname(full_path) if os.path.dirname(full_path) else ".", exist_ok=True)
                 
@@ -114,7 +114,7 @@ class FileManagerSkill(Skill):
                     f.write(content)
                 return {"success": True, "message": f"Written {len(content)} chars to {path}"}
             
-            elif operation == "list_directory":
+            elif action == "list_directory":
                 if not os.path.exists(full_path):
                      return {"success": False, "message": f"Directory not found: {path}"}
                 
@@ -122,7 +122,7 @@ class FileManagerSkill(Skill):
                 return {"success": True, "data": items}
             
             else:
-                return {"success": False, "message": f"Unknown operation: {operation}"}
+                return {"success": False, "message": f"Unknown action: {action}"}
                 
         except Exception as e:
             return {"success": False, "message": str(e)}

@@ -6,17 +6,10 @@ Uses the GenAI Brain's model selection to perform action decomposition, supporti
 
 import json
 import time
-from typing import Dict
+from typing import Dict, Any
 
-from agi.planner.base import Planner, ActionPlan, ActionNode, PlannerResult
-from agi.planner.schemas import (
-    ActionPlanSchema,
-    PLANNER_SYSTEM_PROMPT_TEMPLATE,
-    build_planning_prompt
-)
-
-# Default to empty skills if not provided
-PLANNER_SYSTEM_PROMPT = PLANNER_SYSTEM_PROMPT_TEMPLATE.format(skills_section="No specific skills provided.")
+# Note: System prompt is now generated dynamically per request via render_system_prompt in schemas.py
+from agi.planner.schemas import render_system_prompt
 
 
 class BrainPlanner(Planner):
@@ -24,18 +17,85 @@ class BrainPlanner(Planner):
     Generic Planner implementation using the Brain's selected high-reasoning model.
     """
     
+    
     def __init__(self, config):
         super().__init__(config)
-        # We don't bind a specific client here, we get it dynamically or use the one from base which uses config defaults.
-        # Ideally, we should ask the Brain, but Planner is initialized with Config.
-        # For now, base class Planner.__init__ calls config.get_planner_client(), which respects AGI_DEFAULT_PLANNER.
-        # So self.client is already the correct client.
+        self.perception_layer = None
         
-    async def create_plan(self, goal: str, context: dict) -> ActionPlan:
+    def set_perception_layer(self, layer):
+        self.perception_layer = layer
+        
+    async def _gather_relevant_context(self, goal: str) -> Dict[str, Any]:
+        """
+        Ask the Brain which perceptions are relevant (by description), then fetch them.
+        Query logic: LLM -> keywords -> DB Query -> Modules -> Fetch.
+        """
+        if not self.perception_layer:
+            return {}
+            
+        # 1. Ask Brain for generic needs (Semantic Phrase)
+        prompt = (
+            f"Goal: {goal}\n"
+            f"Identify what kind of environmental information is needed to achieve this goal.\n"
+            f"Return a JSON object with a key 'search_phrase' containing a short natural language phrase describing the needed context (e.g. 'local weather conditions'). Return empty string if none."
+        )
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.config.planner_model,
+                messages=[
+                    {"role": "system", "content": "You are a context-aware system. Output JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0
+            )
+            selection = json.loads(response.choices[0].message.content)
+            phrase = selection.get("search_phrase", "")
+            
+            if not phrase:
+                return {}
+                
+            # 2. Semantic Search via Perception Layer
+            candidates = set()
+            if hasattr(self.perception_layer, 'search_sensors'):
+                 matches = await self.perception_layer.search_sensors(phrase)
+                 candidates.update(matches)
+            
+            # 3. Fetch data for candidates
+            context_data = {}
+            for name in candidates:
+                try:
+                    data = await self.perception_layer.perceive(name)
+                    context_data[name] = data
+                except:
+                    pass
+                    
+            return context_data
+            
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[BrainPlanner] Context selection failed: {e}")
+            return {}
+            
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[BrainPlanner] Context selection failed: {e}")
+            return {}
+
+    async def create_plan(self, goal: str, context: dict, skills: List[Any]) -> ActionPlan:
         """
         Create an action plan using the configured planner model.
         """
         start_time = time.time()
+        
+        # 0. Generate Dynamic System Prompt
+        system_prompt = render_system_prompt(skills)
+        
+        # Smart Context Retrieval
+        sensor_context = await self._gather_relevant_context(goal)
+        if sensor_context:
+            context = {**context, "sensor_data": sensor_context}
         
         # Build prompt
         user_prompt = build_planning_prompt(goal, context)
@@ -70,7 +130,7 @@ class BrainPlanner(Planner):
                 response = await self.client.chat.completions.create(
                     model=self.config.planner_model,
                     messages=[
-                        {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
                     temperature=self.config.temperature,
@@ -99,6 +159,7 @@ class BrainPlanner(Planner):
                     input_schema=action_schema.input_refs,
                     output_schema=action_schema.output_schema,
                     depends_on=action_schema.depends_on,
+                    priority=action_schema.priority,
                 )
                 actions.append(action)
             
@@ -125,11 +186,20 @@ class BrainPlanner(Planner):
                 print(f"[BrainPlanner] Error: {e}")
             raise ValueError(f"Planning failed: {e}")
     
-    async def create_plan_streaming(self, goal: str, context: dict):
+    async def create_plan_streaming(self, goal: str, context: dict, skills: List[Any]):
         """
         Create plan with streaming of reasoning process.
         """
         yield {"type": "planning_started", "goal": goal}
+        
+        # 0. Generate Dynamic System Prompt
+        system_prompt = render_system_prompt(skills)
+        
+        # Smart Context Retrieval
+        sensor_context = await self._gather_relevant_context(goal)
+        if sensor_context:
+            context = {**context, "sensor_data": sensor_context}
+            yield {"type": "context_gathered", "data": sensor_context}
         
         # Build prompt
         user_prompt = build_planning_prompt(goal, context)
@@ -156,7 +226,7 @@ class BrainPlanner(Planner):
                 stream = await self.client.chat.completions.create(
                     model=self.config.planner_model,
                     messages=[
-                        {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
                     temperature=self.config.temperature,
@@ -192,6 +262,7 @@ class BrainPlanner(Planner):
                         input_schema=action_schema.input_refs,
                         output_schema=action_schema.output_schema,
                         depends_on=action_schema.depends_on,
+                        priority=action_schema.priority,
                     )
                     actions.append(action)
                 

@@ -1,6 +1,18 @@
 ---
 name: general_chat
 description: Handle general conversation, greetings, and non-technical questions
+inputs:
+  message:
+    type: string
+    description: The user's message
+  history:
+    type: array
+    description: Previous conversation history (optional)
+    required: false
+outputs:
+  reply:
+    type: string
+    description: The AI's response
 ---
 
 # General Chat Skill

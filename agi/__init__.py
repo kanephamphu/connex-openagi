@@ -23,6 +23,8 @@ from agi.skilldock import SkillRegistry
 from agi.history import HistoryManager
 from agi.perception import PerceptionLayer
 from agi.reflex import ReflexLayer
+from agi.memory.manager import MemoryManager
+from agi.motivation.engine import MotivationEngine
 
 __version__ = "0.1.1"
 __all__ = ["AGI", "AGIConfig", "Planner", "Orchestrator", "SkillRegistry", "GenAIBrain"]
@@ -50,6 +52,27 @@ class AGI:
         # Tier Peer Layers
         self.perception = PerceptionLayer(self.config)
         self.reflex = ReflexLayer(self.config)
+        self.memory = MemoryManager(self.config, self.brain)
+        
+        # Register new memory skill manually if not dynamic already
+        from agi.skilldock.skills.memory.scripts.agent import MemorySkill
+        self.skill_registry.register(MemorySkill(self.config))
+        
+        # Motivation System
+        self.motivation = MotivationEngine(self.config, self.brain)
+        from agi.skilldock.skills.skill_acquisition.scripts.agent import SkillAcquisitionSkill
+        self.skill_registry.register(SkillAcquisitionSkill(self.config))
+        
+        # Output Skills
+        from agi.skilldock.skills.speak.scripts.agent import SpeakSkill
+        from agi.skilldock.skills.browser.scripts.agent import BrowserSkill
+        from agi.skilldock.skills.system.scripts.agent import SystemControlSkill
+        from agi.skilldock.skills.weather.scripts.agent import WeatherSkill
+        
+        self.skill_registry.register(SpeakSkill(self.config))
+        self.skill_registry.register(BrowserSkill(self.config))
+        self.skill_registry.register(SystemControlSkill(self.config))
+        self.skill_registry.register(WeatherSkill(self.config))
         
         self.history = HistoryManager(data_dir=str(self.config.data_dir) if hasattr(self.config, 'data_dir') else "data")
 
@@ -57,8 +80,21 @@ class AGI:
         """Perform async initialization tasks."""
         if self.config.verbose:
             print("[AGI] Running startup initialization...")
+        from agi.identity.manager import IdentityManager
+        self.identity = IdentityManager(self.config)
+        
         await self.skill_registry.ensure_embeddings()
         await self.skill_registry.initialize_all_skills()
+        await self.perception.initialize(
+            memory_manager=self.memory, 
+            skill_registry=self.skill_registry,
+            identity_manager=self.identity
+        )
+        # Wire Perception to Planner for context awareness
+        if hasattr(self.planner, 'set_perception_layer'):
+            self.planner.set_perception_layer(self.perception)
+            
+        await self.reflex.initialize(history_manager=self.history)
         if self.config.verbose:
             print("[AGI] Initialization complete.")
     
@@ -211,6 +247,42 @@ class AGI:
                 
                 full_trace.append({"phase": "execution", **update})
                 yield {"phase": "execution", **update}
+
+            # --- NEW: Persistence Stage ---
+            # After successful execution, add to short-term cache
+            if final_plan:
+                # We could summarize the entire run here or just save the goal/result
+                # For simplicity, let's just record the interaction
+                self.memory.add_to_short_term(goal, "Task completed successfully.") 
+
+            # --- NEW: Motivation Stage ---
+            if self.config.verbose:
+                print("[AGI] Entering Motivation phase...")
+            
+            improvement_suggestion = await self.motivation.review_performance(goal)
+            if improvement_suggestion:
+                improvement_plan_action = await self.motivation.generate_improvement_plan(improvement_suggestion)
+                if improvement_plan_action:
+                    # Create a mini-plan for improvement
+                    from agi.planner.schemas import ActionDAG, Action
+                    
+                    imp_action = Action(
+                        id=improvement_plan_action["id"],
+                        skill=improvement_plan_action["skill"],
+                        description=improvement_plan_action["description"],
+                        inputs=improvement_plan_action["inputs"],
+                        depends_on=[]
+                    )
+                    improvement_dag = ActionDAG(goal=goal, actions=[imp_action])
+                    
+                    yield {"phase": "motivation", "type": "improvement_triggered", "suggestion": improvement_suggestion}
+                    
+                    async for update in self.orchestrator.execute_plan_streaming(improvement_dag):
+                        if "result" in update and hasattr(update["result"], "to_dict"):
+                            update["result"] = update["result"].to_dict()
+                        full_trace.append({"phase": "motivation", **update})
+                        yield {"phase": "motivation", **update}
+
 
         except Exception as e:
             print(f"[AGI] CRITICAL ERROR in execute_with_streaming: {e}")

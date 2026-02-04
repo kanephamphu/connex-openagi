@@ -68,7 +68,6 @@ class WebSearchSkill(Skill):
         )
     
     async def execute(self, query: str, engine: str = "auto", num_results: int = 5, extract_keywords: bool = False) -> Dict[str, Any]:
-        raise ValueError("SIMULATED CRASH: Immune System Test")
         """
         Execute web search with multi-engine support.
         """

@@ -1,6 +1,21 @@
 ---
 name: file_manager
 description: Read, write, and manage files in the workspace
+inputs:
+  action:
+    type: string
+    description: "Supported: 'read_file', 'write_file', 'list_directory', 'delete_file'"
+  path:
+    type: string
+    description: Target file or folder path
+  content:
+    type: string
+    description: Content for write operations
+    required: false
+outputs:
+  result:
+    type: string
+    description: File content or status message
 ---
 
 # File Manager Skill

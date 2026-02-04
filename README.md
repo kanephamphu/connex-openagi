@@ -6,10 +6,12 @@ Connex AGI implements a sophisticated three-tier architecture that transforms ne
 
 ## 🎯 Architecture Overview
 
-Connex AGI mimics biological cognitive systems by integrating **Deliberative Reasoning** (Planner/Orchestrator) with **Perception** (Senses) and **Reflexes** (Automatic Responses).
+Connex AGI mimics biological cognitive systems by integrating **Deliberative Reasoning** (Planner/Orchestrator) with **Perception** (Senses), **Reflexes** (Automatic Responses), **Motivation** (Self-Evaluation), and **Memory** (Knowledge/Experience).
 
 
-![Connex AGI Architecture](docs/assets/architecture_v2.png)
+![architecture software design](docs/assets/architecture_software_design.png)
+
+For a detailed technical breakdown of the 7-tier system, see **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 
 ### 1. Perception Layer (Senses) 👁️
@@ -38,7 +40,7 @@ Reflexes are pre-programmed, automatic responses to specific triggers. They bypa
 ### 3. Tier 1: The Planner (Architect) 🧠
 The high-reasoning component that decomposes goals into action sequences.
 - **Model**: DeepSeek-R1, GPT-o1, or Claude
-- **Input**: Natural language goal + Perception Context
+- **Input**: Natural language goal + Perception Context + Memory Recall
 - **Output**: Directed Acyclic Graph (DAG) of actions
 - **Logic**: Chain-of-thought reasoning to identify inputs/outputs
 
@@ -52,6 +54,18 @@ The state management and routing layer.
 Modular skills that perform actual work.
 - **Built-in Skills**: Web search, HTTP client, code execution
 - **Custom Skills**: Easy to create and install from Registry
+
+### 6. Motivation System (Self-Improvement) 📈
+The reflective layer that monitors performance and triggers learning.
+- **Log Review**: Analyzes execution logs to identify failures or bottlenecks.
+- **Self-Evaluation**: Uses the Brain to assess if goals were met efficiently.
+- **Skill Acquisition**: Autonomously generates and installs new skills to bridge capability gaps.
+
+### 7. Memory System (Experience) 🧠
+The persistent knowledge storage that enables long-term learning.
+- **Short-Term**: RAM-based cache for immediate dialogue context.
+- **Long-Term**: SQLite vector storage for semantic retrieval of past interactions.
+- **Process**: Daily summarization of logs into high-level "Experience Notes".
 
 ---
 
@@ -109,6 +123,49 @@ curl -X POST http://localhost:8001/api/reflex/webhook/github \
 
 ---
 
+
+## 📜 The Constitution (The Soul)
+
+Connex AGI is governed by a **Constitution** (`agi/SOUL.md`) that enforces ethical boundaries and safe operations.
+
+**Principles in the Soul:**
+1.  **Beneficence & Non-Maleficence**: Do good, do no harm.
+2.  **Verification**: High-risk actions require confirmation.
+3.  **Transparency**: No hallucinations; explicit warnings for risks.
+
+The Brain reads this constitution **dynamically** before every reasoning step, ensuring that the Plan aligns with these core values.
+
+---
+
+## 🧠 Memory System (Knowledge & Experience)
+
+Connex AGI features a dual-tier memory system to ensure both immediate context awareness and long-term learning.
+
+### 1. Short-Term Memory (The Cache)
+- **Volatile**: Resides in RAM, active during the session.
+- **Goal**: Provides immediate context for the current conversation.
+- **Capacity**: Stores the last 10 interactions to maintain dialogue flow.
+
+### 2. Long-Term Memory (The Archive)
+- **Persistent**: SQLite-backed vector storage (`agi_memory.db`).
+- **Semantic Similarity**: Uses cosine similarity to find **top-match memories** even without explicit date filters, allowing the AGI to recall related context from any point in its history.
+- **Daily Summarization**: A specialized process that rolls up the day's history into high-level "Experience Notes" to save space and enhance recall accuracy.
+
+### 3. Recall Skill
+The AGI uses the `memory_recall` skill to "remember" past interactions when planning complex goals.
+
+---
+
+## 🚀 Motivation System (Self-Improvement)
+
+The Motivation System allows the AGI to "feel" its own limitations and proactively fix them.
+
+- **How it works**: After every task, the AGI reviews its own execution logs.
+- **Evaluator**: Assesses quality and determines if a failure was due to a missing capability.
+- **Skill Acquisition**: If a gap is found, the AGI triggers a meta-plan to build a new skill using the `skill_acquisition` tool, which leverages the `skill_creator`.
+
+---
+
 ## 📚 Core Concepts
 
 ### Hub Interface
@@ -123,6 +180,7 @@ With Perception integrated, the AGI's thought process evolves:
 2. **Perception Check**: Do I need to "see" something first? (e.g. Query MCP)
 3. **Capability Check**: Which skills do I have?
 4. **Strategic Plan**: Build the Action DAG.
+5. **Motivation Check (Post-Task)**: Did I perform well? Do I need to learn a new skill?
 
 ## 🛠️ Extensibility
 

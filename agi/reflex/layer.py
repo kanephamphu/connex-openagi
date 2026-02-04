@@ -13,8 +13,33 @@ class ReflexLayer:
     def __init__(self, config: AGIConfig):
         self.config = config
         self._reflexes: Dict[str, ReflexModule] = {}
-        self.modules_path = os.path.join(self.config.data_dir, "reflex_modules")
+        self.modules_path = self.config.reflex_storage_path
         os.makedirs(self.modules_path, exist_ok=True)
+        
+    async def initialize(self, history_manager=None):
+        # Demo loading
+        try:
+             from .modules.auto_recovery.system import AutoRecoveryReflex
+             from .modules.safety.system import SafetyPolicyReflex
+             from .modules.governor.system import ResourceGovernorReflex
+             from .modules.voice_command.system import VoiceCommandReflex
+             from .modules.smart_clipboard.system import ClipboardReflex
+             from .modules.scheduler.system import SchedulerReflex
+             from .modules.weather_alert.system import WeatherAlertReflex
+             
+             self.register_reflex(AutoRecoveryReflex(self.config))
+             self.register_reflex(SafetyPolicyReflex(self.config))
+             self.register_reflex(ResourceGovernorReflex(self.config))
+             self.register_reflex(VoiceCommandReflex(self.config))
+             self.register_reflex(ClipboardReflex(self.config))
+             self.register_reflex(SchedulerReflex(self.config))
+             self.register_reflex(WeatherAlertReflex(self.config))
+             
+             if history_manager:
+                 from .modules.self_repair.system import SelfRepairReflex
+                 self.register_reflex(SelfRepairReflex(self.config, history_manager=history_manager))
+        except ImportError:
+             pass
         
     def register_reflex(self, reflex: ReflexModule):
         """Register a new reflex module."""
