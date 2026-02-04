@@ -116,7 +116,9 @@ class AGI:
             ... )
         """
         # Tier 1: Plan the actions
-        plan = await self.planner.create_plan(goal, context or {})
+        # Get relevant, enabled skills
+        skills = await self.skill_registry.get_relevant_skills(goal)
+        plan = await self.planner.create_plan(goal, context or {}, skills)
         
         # Tier 2 & 3: Execute the plan
         result = await self.orchestrator.execute_plan(plan)
@@ -221,8 +223,12 @@ class AGI:
             # Tier 1: Plan the actions (ACTION intent)
             if self.config.verbose:
                 print("[AGI] Creating plan...")
+            
+            # Get relevant, enabled skills
+            skills = await self.skill_registry.get_relevant_skills(goal)
+            
             final_plan = None
-            async for update in self.planner.create_plan_streaming(goal, context or {}):
+            async for update in self.planner.create_plan_streaming(goal, context or {}, skills):
                 if update.get("type") == "planning_started":
                     continue # Already yielded initial planning start
                 if "plan" in update and hasattr(update["plan"], "to_dict"):

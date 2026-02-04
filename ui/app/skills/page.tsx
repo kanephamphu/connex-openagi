@@ -14,6 +14,7 @@ interface Skill {
 export default function SkillsPage() {
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState("");
 
     const fetchSkills = () => {
         fetch("/api/skills")
@@ -32,6 +33,11 @@ export default function SkillsPage() {
         fetchSkills();
     }, []);
 
+    const filteredSkills = skills.filter(s =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     const toggleSkill = async (name: string, currentStatus: boolean) => {
         try {
             const res = await fetch(`/api/skills/${name}/toggle`, {
@@ -40,7 +46,7 @@ export default function SkillsPage() {
                 body: JSON.stringify({ enabled: !currentStatus })
             });
             if (res.ok) {
-                // Optimistic update or refetch
+                // Optimistic update
                 setSkills(skills.map(s => s.name === name ? { ...s, enabled: !currentStatus } : s));
             }
         } catch (err) {
@@ -50,13 +56,26 @@ export default function SkillsPage() {
 
     return (
         <div className="max-w-5xl mx-auto">
-            <h1 className="text-3xl font-bold mb-8">Installed Skills</h1>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <h1 className="text-3xl font-bold">Installed Skills</h1>
+
+                <div className="relative group w-full md:w-64">
+                    <input
+                        type="text"
+                        placeholder="Search skills..."
+                        className="w-full bg-neutral-900/50 border border-neutral-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition-all pl-10"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <span className="absolute left-3 top-2.5 text-neutral-500">🔍</span>
+                </div>
+            </div>
 
             {loading ? (
                 <div className="text-neutral-400">Loading skills...</div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {skills.map((skill) => (
+                    {filteredSkills.map((skill) => (
                         <div
                             key={skill.name}
                             className={`border rounded-xl p-6 transition-all hover:shadow-lg ${skill.enabled

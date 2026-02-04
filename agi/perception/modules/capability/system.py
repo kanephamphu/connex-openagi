@@ -51,6 +51,10 @@ class CapabilityPerception(PerceptionModule):
                 return {"error": "Cannot access skill map"}
                 
             for name, skill in skill_map.items():
+                # Respect enabled flag
+                if isinstance(skill.config, dict) and not skill.config.get("enabled", True):
+                    continue
+                    
                 meta = skill.metadata
                 skills_info.append({
                     "name": name,

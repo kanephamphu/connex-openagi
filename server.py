@@ -34,22 +34,31 @@ app.add_middleware(
 
 # Initialize AGI
 agi_instance = None
+system_config = None
 
 @app.on_event("startup")
 async def startup():
-    global agi_instance
+    global agi_instance, system_config
     try:
-        config = AGIConfig.from_env()
-        agi_instance = AGI(config)
+        # Load config first (from env + db)
+        system_config = AGIConfig.from_env()
+        print("[Server] Configuration loaded.")
+        
+        # Then try to init AGI
+        agi_instance = AGI(system_config)
         await agi_instance.initialize()
         print("AGI Initialized Successfully")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Failed to initialize AGI: {e}")
         # Don't crash startup, but subsequent requests might fail
+        # Requests to /api/config will use system_config
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "agi_initialized": agi_instance is not None}
+
 
 from typing import Dict, Any, Optional
 import json
@@ -182,6 +191,23 @@ async def webhook_trigger(source: str, payload: Dict[str, Any]):
             
     return {"status": "received", "triggered": len(triggered_plans), "results": results}
 
+@app.get("/api/perception")
+async def list_perception_modules():
+    """List all installed perception modules."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    modules = []
+    for name, module in agi_instance.perception._modules.items():
+        modules.append({
+            "name": module.metadata.name,
+            "description": module.metadata.description,
+            "version": module.metadata.version,
+            "type": "perception",
+            "signals": [s.name for s in module.metadata.signals]
+        })
+    return {"modules": modules}
+
 @app.get("/api/perception/{module_name}")
 async def perceive(module_name: str, query: Optional[str] = None):
     """
@@ -195,6 +221,126 @@ async def perceive(module_name: str, query: Optional[str] = None):
         return {"module": module_name, "data": data}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reflex")
+async def list_reflex_modules():
+    """List all installed reflex modules."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+         
+    modules = []
+    # Access private _reflexes (ReflexLayer doesn't expose list method yet)
+    for name, reflex in agi_instance.reflex._reflexes.items():
+        modules.append({
+            "name": reflex.metadata.name,
+            "description": reflex.metadata.description,
+            "version": reflex.metadata.version,
+            "type": reflex.metadata.type,
+            "active": reflex.active
+        })
+    return {"modules": modules}
+
+
+@app.get("/api/config")
+async def get_system_config():
+    """Get current system configuration."""
+    # Use active config or fallback to system_config
+    current_config = None
+    if agi_instance:
+        current_config = agi_instance.config
+    elif system_config:
+        current_config = system_config
+    else:
+        # Emergency fallback
+        try:
+             current_config = AGIConfig.from_env()
+        except:
+             raise HTTPException(status_code=503, detail="Configuration unavailable")
+    
+    # Return everything from config object
+    # Mask secrets
+    raw_config = current_config.__dict__.copy()
+    masked_config = {}
+    for k, v in raw_config.items():
+        if "api_key" in k or "token" in k or "secret" in k:
+            if v:
+                masked_config[k] = f"***{str(v)[-4:]}"
+            else:
+                masked_config[k] = None
+        else:
+            masked_config[k] = v
+            
+    return {"config": masked_config}
+
+class ConfigUpdateRequest(BaseModel):
+    config: Dict[str, Any]
+
+@app.post("/api/config")
+async def update_system_config(request: ConfigUpdateRequest):
+    """
+    Update system configuration.
+    If AGI is not initialized, try to re-initialize it after update.
+    """
+    global agi_instance, system_config
+    
+    try:
+        from agi.utils.database import DatabaseManager
+        db = DatabaseManager()
+        
+        # 1. Save to DB
+        updated_keys = []
+        for key, value in request.config.items():
+             db.set_config(key, value)
+             updated_keys.append(key)
+
+        # 2. Update In-Memory Config
+        target_config = agi_instance.config if agi_instance else system_config
+        
+        # If even system_config is gone, regenerate
+        if not target_config:
+             target_config = AGIConfig.from_env()
+             if not system_config:
+                  system_config = target_config
+
+        for key, value in request.config.items():
+            if hasattr(target_config, key):
+                setattr(target_config, key, value)
+        
+        # 3. Attempt Re-Initialization if invalid
+        if not agi_instance:
+            print("[Server] Configuration updated. Attempting to initialize AGI...")
+            try:
+                # Re-create config from env+db to be sure
+                new_config = AGIConfig.from_env()
+                new_agi = AGI(new_config)
+                await new_agi.initialize()
+                
+                # Success!
+                agi_instance = new_agi
+                system_config = new_config
+                print("[Server] AGI Initialized/Recovered via Config Update!")
+            except Exception as e:
+                 print(f"[Server] Re-init failed: {e}")
+                 # We still return success for the Config Update, so user knows it saved
+                
+        return {"success": True, "updated": updated_keys, "agi_initialized": agi_instance is not None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/memory/summarize")
+async def trigger_summarization():
+    """
+    Trigger the daily summarization process.
+    Summarizes the last 24h of history and saves to Long-Term Memory.
+    """
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    try:
+        await agi_instance.memory.summarize_and_persist(agi_instance.history)
+        return {"success": True, "message": "Daily summary generated and persisted."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/api/history")
@@ -297,7 +443,10 @@ async def repair_history_item(entry_id: str):
                except:
                    pass
             
-           # 4. Run Planner with repair context
+           # 4. Get relevant skills
+           skills = await agi_instance.skill_registry.get_relevant_skills(f"Fix {skill_name} error: {error_msg}")
+           
+           # 5. Run Planner with repair context
            from agi.planner.brain_planner import BrainPlanner
            planner = BrainPlanner(agi_instance.config)
            
@@ -312,7 +461,8 @@ async def repair_history_item(entry_id: str):
            final_plan = None
            async for update in planner.create_plan_streaming(
                goal=f"Fix failure in step '{failed_id}' ({skill_name}): {error_msg}", 
-               context=context
+               context=context,
+               skills=skills
            ):
                 # Yield planning events
                 yield {"event": "update", "data": json.dumps(update)}
