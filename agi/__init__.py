@@ -15,6 +15,8 @@ Usage:
     >>> result = await agi.execute("Analyze my brand's competitors")
 """
 
+import asyncio
+from typing import Dict, Any, List, Optional
 from agi.config import AGIConfig
 from agi.brain import GenAIBrain
 from agi.planner import Planner
@@ -41,6 +43,7 @@ class AGI:
         """
         self.config = config or AGIConfig.from_env()
         self.brain = GenAIBrain(self.config)
+        self.loop = asyncio.get_event_loop() # Store loop for thread-safe sensor callbacks
         
         from agi.planner.brain_planner import BrainPlanner
         self.planner = BrainPlanner(self.config)
@@ -74,6 +77,10 @@ class AGI:
         self.skill_registry.register(SystemControlSkill(self.config))
         self.skill_registry.register(WeatherSkill(self.config))
         
+        # Internal Interface Skill
+        from agi.skilldock.skills.agi_interface.scripts.agent import AGIInterfaceSkill
+        self.skill_registry.register(AGIInterfaceSkill(self.config, self.execute))
+        
         self.history = HistoryManager(data_dir=str(self.config.data_dir) if hasattr(self.config, 'data_dir') else "data")
 
     async def initialize(self):
@@ -95,9 +102,47 @@ class AGI:
             self.planner.set_perception_layer(self.perception)
             
         await self.reflex.initialize(history_manager=self.history)
+
+        # Initialize and Start the 'Ear' sensor
+        try:
+            from agi.sensors.ear.ear_sensor import VoiceEar
+            self.ear = VoiceEar(self.config, on_event_callback=self.handle_sensor_event_sync)
+            self.ear.start()
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[AGI] Could not start Ear sensor: {e}")
+
         if self.config.verbose:
             print("[AGI] Initialization complete.")
-    
+
+    def handle_sensor_event_sync(self, event: Dict[str, Any]):
+        """Thread-safe gateway for sensors to inject events into the AGI."""
+        if hasattr(self, 'loop') and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.handle_reflex_event(event), self.loop)
+        else:
+            # Fallback if loop is not yet running (startup)
+            pass
+
+    async def handle_reflex_event(self, event: Dict[str, Any]):
+        """
+        Process a reflex event (from Ear, Webhook, etc.)
+        """
+        if self.config.verbose:
+            print(f"[AGI] Handling reflex event: {event.get('type')}")
+        
+        triggered_plans = await self.reflex.process_event(event)
+        
+        for tp in triggered_plans:
+            reflex_name = tp["reflex"]
+            plan = tp["plan"]
+            
+            if self.config.verbose:
+                print(f"[AGI] Executing reflex plan for '{reflex_name}'")
+            
+            # Execute the plan via orchestrator
+            # We don't wait for it to finish in this event handler to keep sensor responsive
+            asyncio.create_task(self.orchestrator.execute_plan(plan))
+
     async def execute(self, goal: str, context: dict | None = None) -> dict:
         """
         Execute a goal using the three-tier AGI system.
@@ -270,16 +315,16 @@ class AGI:
                 improvement_plan_action = await self.motivation.generate_improvement_plan(improvement_suggestion)
                 if improvement_plan_action:
                     # Create a mini-plan for improvement
-                    from agi.planner.schemas import ActionDAG, Action
+                    from agi.planner.base import ActionPlan, ActionNode
                     
-                    imp_action = Action(
+                    imp_action = ActionNode(
                         id=improvement_plan_action["id"],
                         skill=improvement_plan_action["skill"],
                         description=improvement_plan_action["description"],
                         inputs=improvement_plan_action["inputs"],
                         depends_on=[]
                     )
-                    improvement_dag = ActionDAG(goal=goal, actions=[imp_action])
+                    improvement_dag = ActionPlan(goal=goal, actions=[imp_action])
                     
                     yield {"phase": "motivation", "type": "improvement_triggered", "suggestion": improvement_suggestion}
                     

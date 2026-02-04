@@ -84,11 +84,16 @@ class VoiceCommandReflex(ReflexModule):
                 "skill": "speak",
                 "description": "Acknowledge voice command",
                 "inputs": {
-                    "text": f"I heard you say: {self.last_command}. Processing..."
+                    "text": "One moment, let me look into that for you..."
                 }
             },
-            # Ideally, we'd have a 'submit_goal' skill.
-            # For this demo, we'll just Ack, and the Loop in the demo script
-            # will handle the actual 'AGI.execute(text)' part because the Reflex
-            # doesn't inherently have access to 'AGI.execute'.
+            {
+                "id": "delegate_to_brain",
+                "skill": "agi_brain_interface",
+                "description": "Delegating spoken command to the AGI brain for decomposition.",
+                "inputs": {
+                    "goal": self.last_command
+                },
+                "depends_on": ["voice_process_ack"]
+            }
         ]

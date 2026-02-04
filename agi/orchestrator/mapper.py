@@ -148,16 +148,32 @@ class IOMapper:
         if output.get("success") is False:
             return output
 
+        if not expected_schema:
+            return output
+
         mapped_output = output.copy()
         
-        for key, type_str in expected_schema.items():
+        # 1. Normailize target keys from schema
+        target_keys = {}
+        if isinstance(expected_schema, dict) and "properties" in expected_schema:
+            # It's a JSON Schema
+            for name, prop in expected_schema["properties"].items():
+                target_keys[name] = prop.get("type", "any")
+        elif isinstance(expected_schema, dict) and "type" in expected_schema and len(expected_schema) <= 2:
+            # Whole thing is a certain type (generic)
+            pass
+        elif isinstance(expected_schema, dict):
+            # Simple mapping
+            target_keys = expected_schema
+            
+        # 2. Validate and Map
+        for key, type_str in target_keys.items():
             if key not in mapped_output:
                 # --- SMART OUTPUT MAPPING ---
-                # Check for common synonyms in the actual output
                 synonyms = {
-                    "content": ["data", "text", "body", "file_content", "result"],
-                    "reply": ["response", "answer", "text"],
-                    "status": ["success", "message", "result"]
+                    "content": ["data", "text", "body", "file_content", "result", "message"],
+                    "reply": ["response", "answer", "text", "message", "output"],
+                    "status": ["success", "message", "result", "state"]
                 }
                 
                 found = False
@@ -168,23 +184,27 @@ class IOMapper:
                         break
                 
                 if not found:
-                    # Log error context for future improvements
-                    print(f"[IOMapper] CRITICAL: Action {action_id} missing expected key '{key}'. "
-                          f"Actual keys: {list(mapped_output.keys())}")
-                    raise ValueError(f"Missing expected output key: {key}")
+                    # Log as warning instead of raising (Leinent validation as requested)
+                    if not any(k in mapped_output for k in ["success", "error", "message"]):
+                        print(f"[IOMapper] WRN: Action {action_id} missing expected key '{key}'. "
+                              f"Actual keys: {list(mapped_output.keys())}")
+                    # We don't raise here to allow execution to proceed if possible
+                    continue
             
             # Basic type checking (with coercion if possible)
             value = mapped_output[key]
+            # type_str might be a dict if it's a nested JSON schema, skip check for those
+            if not isinstance(type_str, str):
+                continue
+                
             if not IOMapper._check_type(value, type_str):
-                # Try simple coercion for common types
                 try:
                     if type_str == "str": mapped_output[key] = str(value)
                     elif type_str == "int": mapped_output[key] = int(value)
+                    elif type_str == "float": mapped_output[key] = float(value)
                 except:
-                    raise ValueError(
-                        f"Output key '{key}' has incorrect type. "
-                        f"Expected {type_str}, got {type(value).__name__}"
-                    )
+                    # Warn instead of raise
+                    print(f"[IOMapper] WRN: Key '{key}' type mismatch. Expected {type_str}, got {type(value).__name__}")
         
         return mapped_output
     

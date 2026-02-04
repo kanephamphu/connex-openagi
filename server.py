@@ -57,7 +57,27 @@ async def startup():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "agi_initialized": agi_instance is not None}
+    ear_active = False
+    if agi_instance and hasattr(agi_instance, "ear") and agi_instance.ear:
+        ear_active = agi_instance.ear.running
+        
+    return {
+        "status": "ok", 
+        "agi_initialized": agi_instance is not None,
+        "ear_active": ear_active
+    }
+
+@app.post("/api/sensors/ear/toggle")
+async def toggle_ear(enabled: bool):
+    if not agi_instance or not hasattr(agi_instance, "ear") or not agi_instance.ear:
+        raise HTTPException(status_code=503, detail="Ear sensor not available")
+    
+    if enabled:
+        agi_instance.ear.start()
+    else:
+        agi_instance.ear.stop()
+        
+    return {"success": True, "active": agi_instance.ear.running}
 
 
 from typing import Dict, Any, Optional

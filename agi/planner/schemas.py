@@ -25,6 +25,7 @@ class ActionNodeSchema(BaseModel):
     )
     
     output_schema: Dict[str, Any] = Field(
+        default_factory=dict,
         description="Expected output structure (e.g., {'competitors': 'List[dict]' or JSON Schema})"
     )
     
@@ -56,9 +57,9 @@ class ActionPlanSchema(BaseModel):
     )
     
     expected_outcome: str = Field(
+        default="",
         description="What the final result should look like"
     )
-
 
 # System prompt for planning
 PLANNER_SYSTEM_PROMPT_TEMPLATE = """You are an expert AI planner that decomposes complex goals into executable action sequences.
@@ -131,11 +132,15 @@ def render_system_prompt(skills: List[Any]) -> str:
         inputs = []
         if meta.input_schema and "properties" in meta.input_schema:
             for name, prop in meta.input_schema["properties"].items():
-                desc = prop.get("description", "")
-                type_ = prop.get("type", "any")
+                if isinstance(prop, dict):
+                    desc = prop.get("description", "")
+                    type_ = prop.get("type", "any")
+                    enum_values = prop.get("enum", [])
+                else:
+                    desc = ""
+                    type_ = str(prop)
+                    enum_values = []
                 
-                # Add enum values if present
-                enum_values = prop.get("enum", [])
                 if enum_values:
                     type_ = f"{type_} (Allowed: {', '.join(map(str, enum_values))})"
                 
@@ -150,8 +155,25 @@ def render_system_prompt(skills: List[Any]) -> str:
         # Outputs
         outputs = []
         if meta.output_schema:
-            for name, type_ in meta.output_schema.items():
-                outputs.append(f"{name} ({type_})")
+            # Handle both simple {key: type} and full JSON Schema
+            if "properties" in meta.output_schema:
+                for name, prop in meta.output_schema["properties"].items():
+                    if isinstance(prop, dict):
+                        type_ = prop.get("type", "any")
+                    else:
+                        type_ = str(prop)
+                    outputs.append(f"{name} ({type_})")
+            elif "type" in meta.output_schema and len(meta.output_schema) <= 2:
+                # Likely just a type definition for the whole output
+                outputs.append(f"Result ({meta.output_schema['type']})")
+            else:
+                # Simple mapping
+                for name, type_ in meta.output_schema.items():
+                    outputs.append(f"{name} ({type_})")
+        
+        if not outputs:
+            outputs.append("None")
+            
         outputs_str = ", ".join(outputs)
         skills_text += f"  - Outputs: {outputs_str}\n\n"
         

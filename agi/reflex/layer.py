@@ -3,6 +3,7 @@ import os
 from typing import Dict, List, Optional, Any
 from agi.config import AGIConfig
 from agi.reflex.base import ReflexModule
+from agi.planner.base import ActionPlan, ActionNode
 
 class ReflexLayer:
     """
@@ -64,7 +65,16 @@ class ReflexLayer:
                 if should_trigger:
                     if self.config.verbose:
                         print(f"[Reflex] Triggered: {name}")
-                    plan = await reflex.get_plan()
+                    plan_data = await reflex.get_plan()
+                    
+                    # Convert list of dicts to ActionPlan
+                    actions = [ActionNode(**a) for a in plan_data]
+                    plan = ActionPlan(
+                        goal=f"Reflex Trigger: {name}",
+                        actions=actions,
+                        reasoning=f"Triggered by reflex module {name}"
+                    )
+                    
                     triggered_plans.append({
                         "reflex": name,
                         "plan": plan
