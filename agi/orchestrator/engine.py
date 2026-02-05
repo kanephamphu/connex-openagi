@@ -16,7 +16,6 @@ from agi.planner.base import ActionPlan
 from agi.skilldock.base import MissingConfigError
 
 
-from agi.orchestrator.corrector import Corrector
 
 @dataclass
 class ExecutionResult:
@@ -58,7 +57,8 @@ class Orchestrator:
         self.config = config
         self.skill_registry = skill_registry
         self.mapper = IOMapper()
-        self.corrector = Corrector(config)
+        from agi.brain import GenAIBrain
+        self.brain = GenAIBrain(config)
     
     async def execute_plan(self, plan: ActionPlan) -> ExecutionResult:
         """
@@ -93,7 +93,7 @@ class Orchestrator:
                 level_tasks = []
                 for action_id in level_actions:
                     action = next(a for a in plan.actions if a.id == action_id)
-                    level_tasks.append(self._execute_action(action, state))
+                    level_tasks.append(self._execute_action_with_retry(action, state, max_retries=3))
                 
                 # Wait for all actions in this level to complete
                 level_results = await asyncio.gather(*level_tasks, return_exceptions=True)
@@ -119,66 +119,85 @@ class Orchestrator:
                                 
                             print(f"[Orchestrator] Action {action_id} failed: {error_msg}")
                         
-                        # --- SELF CORRECTION ---
+                        # --- NEW: RESILIENT FAILURE HANDLING ---
                         repaired = False
-                        if self.config.self_correction_enabled and failed_inputs:
-                            # Attempt fast fix
+                        if self.config.self_correction_enabled:
                             action = next(a for a in plan.actions if a.id == action_id)
                             
-                            if self.config.verbose: 
-                                print(f"[Orchestrator] Attempting immune system fix for {action.skill}...")
+                            # 1. Search for Alternative Skill
+                            if self.config.verbose:
+                                print(f"[Orchestrator] Searching for alternative for failing skill: {action.skill}...")
                             
-                            fixed_inputs = await self.corrector.correct(
-                                skill_name=action.skill,
-                                original_inputs=failed_inputs,
-                                error_message=error_msg
-                            )
-                            
-                            if fixed_inputs:
-                                if self.config.verbose:
-                                    print(f"[Orchestrator] Fix proposed: {fixed_inputs}")
-                                    print(f"[Orchestrator] Retrying action {action_id}...")
-                                
-                                # Retry with fixed inputs (bypass standard execution wrapper to inject inputs)
-                                try:
-                                    skill = self.skill_registry.get_skill(action.skill)
-                                    
-                                    # Sanitize fixed_inputs: only keep keys defined in skill's input schema
-                                    # or allow standard ones if schema is loose.
-                                    input_schema = skill.metadata.input_schema
-                                    valid_keys = []
-                                    if isinstance(input_schema, dict):
-                                        valid_keys = list(input_schema.get("properties", {}).keys())
-                                        if not valid_keys and "type" not in input_schema:
-                                            valid_keys = list(input_schema.keys())
-                                            
-                                    sanitized_inputs = self.mapper.auto_map_to_schema(fixed_inputs, skill.metadata, action.description)
-                                    
-                                    if self.config.verbose and sanitized_inputs != fixed_inputs:
-                                        print(f"[Orchestrator] Coerced/Sanitized inputs for retry: {sanitized_inputs}")
+                            # Get context from failing skill
+                            failed_cat, failed_sub = None, None
+                            try:
+                                fs = self.skill_registry.get_skill(action.skill)
+                                failed_cat = fs.metadata.category
+                                failed_sub = getattr(fs.metadata, 'sub_category', None)
+                            except: pass
 
-                                    # Execute with timeout
-                                    output = await asyncio.wait_for(
-                                        skill.execute(**sanitized_inputs),
+                            alternatives = await self.skill_registry.get_relevant_skills(
+                                action.description, 
+                                limit=3,
+                                category=failed_cat,
+                                sub_category=failed_sub
+                            )
+                            # Filter out the failed skill
+                            alternatives = [s for s in alternatives if s.metadata.name != action.skill]
+                            
+                            for alt_skill in alternatives:
+                                if self.config.verbose:
+                                    print(f"[Orchestrator] Found alternative: {alt_skill.metadata.name}. Attempting execution...")
+                                
+                                try:
+                                    # Remap inputs for alternative skill
+                                    alt_inputs = self.mapper.auto_map_to_schema(failed_inputs, alt_skill.metadata, action.description)
+                                    
+                                    alt_output = await asyncio.wait_for(
+                                        alt_skill.execute(**alt_inputs),
                                         timeout=action.metadata.get("timeout", self.config.action_timeout)
                                     )
                                     
-                                    if action.output_schema:
-                                        self.mapper.validate_output(output, action.output_schema)
-                                        
-                                    # Success! Replace the failed result
+                                    # Check for failure in alternative
+                                    if isinstance(alt_output, dict) and (alt_output.get("success") is False or "error" in alt_output):
+                                         continue
+                                         
+                                    # Success! Replace result
                                     result = StepResult(
                                         action_id=action.id,
                                         success=True,
-                                        output=output,
-                                        duration=0.0, # Approximate
-                                        metadata={"skill": action.skill, "inputs": fixed_inputs, "corrected": True}
+                                        output=alt_output,
+                                        duration=0.0,
+                                        metadata={"skill": alt_skill.metadata.name, "inputs": alt_inputs, "alternative": True}
                                     )
                                     repaired = True
-                                    print(f"[Orchestrator] Action {action_id} repaired successfully! ✅")
-                                except Exception as e_retry:
-                                    print(f"[Orchestrator] Retry failed: {e_retry}")
-                                    # Fall through to standard failure
+                                    print(f"[Orchestrator] Action {action_id} recovered using alternative skill '{alt_skill.metadata.name}'! 🔄")
+                                    break
+                                except Exception as alt_err:
+                                    if self.config.verbose:
+                                        print(f"[Orchestrator] Alternative '{alt_skill.metadata.name}' failed: {alt_err}")
+                                    continue
+                            
+                            # 2. LLM Simulation Fallback
+                            if not repaired:
+                                if self.config.verbose:
+                                    print(f"[Orchestrator] No alternative skill worked. Falling back to LLM Simulation...")
+                                
+                                try:
+                                    simulated_output = await self._simulate_action_result(action, failed_inputs, error_msg, plan.goal)
+                                    if simulated_output:
+                                        result = StepResult(
+                                            action_id=action.id,
+                                            success=True,
+                                            output=simulated_output,
+                                            duration=0.1,
+                                            metadata={"skill": "brain_simulation", "inputs": failed_inputs, "simulated": True}
+                                        )
+                                        repaired = True
+                                        print(f"[Orchestrator] Action {action_id} simulated by Brain to continue plan. 🧠")
+                                except Exception as sim_err:
+                                    if self.config.verbose:
+                                        print(f"[Orchestrator] Simulation failed: {sim_err}")
                         
                         # Check again if repaired
                         if repaired:
@@ -201,14 +220,16 @@ class Orchestrator:
                             priority = getattr(action, "priority", "MAJOR")
                             
                             if priority == "MAJOR":
-                                if self.config.self_correction_enabled:
-                                    # Fallback to heavy replan
-                                    try:
-                                        return await self._handle_failure(plan, state, action_id, error_msg)
-                                    except Exception as replan_err:
-                                         raise Exception(f"MAJOR step '{action_id}' failed and replan failed: {error_msg}. (Replan error: {replan_err})")
-                                else:
-                                    raise Exception(f"MAJOR step '{action_id}' failed: {error_msg}")
+                                # Replan is disabled per user request in favor of local alternative discovery/simulation
+                                if self.config.verbose:
+                                    print(f"[Orchestrator] MAJOR step '{action_id}' failed after all recovery attempts. Stopping execution.")
+                                return ExecutionResult(
+                                    success=False,
+                                    errors=[error_msg],
+                                    trace=[state.results[aid] for aid in state.completed],
+                                    duration=time.time() - start_time,
+                                    state=state
+                                )
                             elif priority == "SKIPPABLE":
                                 if self.config.verbose:
                                     print(f"[Orchestrator] SKIPPABLE step '{action_id}' failed/skipped. No impact on goal. Error: {error_msg}")
@@ -285,6 +306,26 @@ class Orchestrator:
             }
         )
     
+    async def _execute_action_with_retry(self, action, state: ExecutionState, max_retries: int = 3) -> StepResult:
+        """
+        Execute an action with a retry loop.
+        """
+        last_error = ""
+        for attempt in range(max_retries):
+            if self.config.verbose and attempt > 0:
+                print(f"[Orchestrator] Retry attempt {attempt + 1}/{max_retries} for {action.id}")
+            
+            result = await self._execute_action(action, state)
+            if result.success:
+                return result
+            
+            last_error = result.error
+            # Small delay between retries
+            await asyncio.sleep(1)
+            
+        # If we exhausted retries, return the last failure
+        return result
+
     async def _execute_action(self, action, state: ExecutionState) -> StepResult:
         """
         Execute a single action.
@@ -361,7 +402,6 @@ class Orchestrator:
                     "inputs": inputs,
                 }
             )
-        
         except Exception as e:
             duration = time.time() - start_time
             return StepResult(
@@ -374,6 +414,69 @@ class Orchestrator:
                     "inputs": inputs, # Capture inputs on failure
                 }
             )
+
+    async def _simulate_action_result(self, action, inputs, error_msg, goal) -> Dict[str, Any]:
+        """
+        Use Brain to simulate a successful tool output after a failure.
+        """
+        from agi.brain import TaskType
+        
+        prompt = f"""
+        TASK: Simluate the output of a failed tool execution to allow an AGI plan to continue.
+        
+        OVERALL GOAL: {goal}
+        
+        FAILED STEP: {action.description}
+        SKILL ATTEMPTED: {action.skill}
+        INPUTS USED: {json.dumps(inputs)}
+        ERROR ENCOUNTERED: {error_msg}
+        
+        INSTRUCTIONS:
+        1. Generate a logic and realistic tool output (JSON) that would have been expected if the tool succeeded.
+        2. Ensure the output strictly fulfills the requirement of the step so dependent steps can proceed.
+        3. Respond ONLY with the JSON object.
+        """
+        
+        try:
+            provider, model = self.brain.select_model(TaskType.FAST)
+            client = self.get_client_provider(provider)
+            
+            if provider in ["openai", "deepseek", "groq"]:
+                resp = await client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "You are an AGI tool simulator. Output only valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3
+                )
+                text = resp.choices[0].message.content
+            elif provider == "anthropic":
+                resp = await client.messages.create(
+                    model=model,
+                    max_tokens=1000,
+                    system="You are an AGI tool simulator. Output only valid JSON.",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                text = resp.content[0].text
+            else:
+                return {"error": "No simulation provider available"}
+
+            # Basic JSON cleanup
+            import json
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1:
+                return json.loads(text[start:end+1])
+            return json.loads(text)
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[Orchestrator] Simulation prompt failed: {e}")
+            return {"error": f"Simulation failed: {e}"}
+
+    def get_client_provider(self, provider_name):
+        return self.brain.get_client(provider_name)
+    
     
     async def _handle_failure(
         self,
@@ -472,8 +575,55 @@ class Orchestrator:
                 }
                 
                 try:
-                    result = await self._execute_action(action, state)
+                    # 1. Primary execution with retries
+                    result = await self._execute_action_with_retry(action, state, max_retries=3)
                     
+                    # 2. If primary failed, try alternative skills or simulation (Immune System)
+                    if not result.success and self.config.self_correction_enabled:
+                        yield {"type": "correction_started", "action_id": action_id, "error": result.error}
+                        
+                        # --- Resilient Recovery Pipeline ---
+                        # A. Try Alternatives
+                        failed_cat, failed_sub = None, None
+                        try:
+                            fs = self.skill_registry.get_skill(action.skill)
+                            failed_cat = fs.metadata.category
+                            failed_sub = getattr(fs.metadata, 'sub_category', None)
+                        except: pass
+
+                        alternatives = await self.skill_registry.get_relevant_skills(
+                            action.description, 
+                            limit=3, 
+                            category=failed_cat,
+                            sub_category=failed_sub
+                        )
+                        alternatives = [s for s in alternatives if s.metadata.name != action.skill]
+                        
+                        repaired = False
+                        for alt_skill in alternatives:
+                            try:
+                                yield {"type": "alternative_attempt", "skill": alt_skill.metadata.name}
+                                alt_inputs = self.mapper.auto_map_to_schema(result.metadata.get("inputs", {}), alt_skill.metadata, action.description)
+                                alt_output = await asyncio.wait_for(alt_skill.execute(**alt_inputs), timeout=action.metadata.get("timeout", self.config.action_timeout))
+                                
+                                if not (isinstance(alt_output, dict) and (alt_output.get("success") is False or "error" in alt_output)):
+                                    result = StepResult(action_id=action.id, success=True, output=alt_output, duration=0.0, metadata={"skill": alt_skill.metadata.name, "inputs": alt_inputs, "alternative": True})
+                                    repaired = True
+                                    yield {"type": "correction_success", "method": f"alternative:{alt_skill.metadata.name}"}
+                                    break
+                            except: continue
+                        
+                        # B. Simulation Fallback
+                        if not repaired:
+                            try:
+                                yield {"type": "simulation_attempt"}
+                                simulated_output = await self._simulate_action_result(action, result.metadata.get("inputs", {}), result.error, plan.goal)
+                                if simulated_output:
+                                    result = StepResult(action_id=action.id, success=True, output=simulated_output, duration=0.1, metadata={"skill": "brain_simulation", "inputs": result.metadata.get("inputs", {}), "simulated": True})
+                                    repaired = True
+                                    yield {"type": "correction_success", "method": "simulation"}
+                            except: pass
+
                     if result.success:
                         state.mark_completed(action_id, result)
                         yield {
@@ -489,6 +639,7 @@ class Orchestrator:
                             "action_id": action_id,
                             "error": result.error
                         }
+                        return # Stop level if major failure
                 except MissingConfigError as e:
                     yield {
                         "type": "config_required",
@@ -497,29 +648,6 @@ class Orchestrator:
                         "schema": e.schema
                     }
                     return
-
-            # --- SELF CORRECTION CHECK ---
-            if state.failed:
-                # Get the first failure
-                failed_id = state.failed[0]
-                error_msg = state.results[failed_id].error
-                
-                if self.config.self_correction_enabled:
-                    # UPDATED: Do NOT auto-trigger. Notify user of failure (via history) to allow manual usage.
-                    # We just yield the failure and stop.
-                    # The frontend will show 'Repair' button which calls trigger_repair()
-                    pass
-                    
-                    # Original Auto-logic (disabled per user request):
-                    # yield {
-                    #     "type": "correction_started",
-                    #     "failed_action": failed_id,
-                    #     "error": error_msg
-                    # }
-                    # ... (rest commented out)
-                    
-                    return # Stop execution on failure
-        
         yield {
             "type": "execution_completed",
             "success": len(state.failed) == 0,

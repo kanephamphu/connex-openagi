@@ -84,7 +84,19 @@ class BrowserSkill(Skill):
                 if action == "navigate" or url:
                     if not url:
                         return {"success": False, "error": "URL is required for navigation"}
-                    await page.goto(url, wait_until="domcontentloaded")
+                    
+                    # Robust URL cleaning
+                    target_url = str(url).strip()
+                    if target_url.startswith('"') and target_url.endswith('"'):
+                        target_url = target_url[1:-1]
+                    if target_url.startswith('{') and '}' in target_url:
+                        # If it looks like an unresolved variable placeholder, it's an orchestration error
+                         return {"success": False, "error": f"Invalid URL (unresolved variable): {target_url}"}
+                         
+                    if not target_url.startswith(("http://", "https://")):
+                        target_url = "https://" + target_url
+                        
+                    await page.goto(target_url, wait_until="domcontentloaded")
                     if wait_for:
                         await page.wait_for_selector(wait_for)
                 
@@ -109,9 +121,14 @@ class BrowserSkill(Skill):
                 results["url"] = page.url
                 results["title"] = await page.title()
                 
+                # Enhanced extraction: always get snippet even if not "extract"
+                results["content_preview"] = (await page.inner_text("body"))[:500] 
+
                 if action == "extract":
-                    # Simple text extraction for now
-                    results["content"] = await page.inner_text("body")
+                    # Get cleaner text, common for LLMs
+                    results["content"] = await page.evaluate("() => document.body.innerText")
+                    # Also get meta for better research
+                    results["meta_description"] = await page.evaluate("() => document.querySelector('meta[name=\"description\"]')?.content || ''")
                 
                 results["success"] = True
                 await browser.close()

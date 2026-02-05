@@ -243,8 +243,8 @@ class GenAIBrain:
 
     async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
         """
-        Classify the user intent into specific categories using Local or Cloud models.
-        Supports CHAT, WEATHER, WEB_SEARCH, FILE_OP, SYSTEM_CMD, RESEARCH, ACTION, PLAN.
+        Classify the user intent into core categories.
+        Supports CHAT, RESEARCH, SINGLE_ACTION, PLAN.
         """
         # 1. Routing Decision: Local Sub-Brain vs External
         target_brain = sub_brain_manager if not self.config.use_external_subbrain else None
@@ -253,32 +253,35 @@ class GenAIBrain:
             try:
                 task = {
                     "prompt": (
-                        "Task: Classify User Input into EXACTLY one category.\n\n"
-                        "CATEGORIES:\n"
-                        "- CHAT: Greetings, social talk, identity, or simple conversational filler.\n"
-                        "- WEATHER: Questions about weather, temperature, or forecasts.\n"
-                        "- WEB_SEARCH: Fact questions, current news, searching for specific info online.\n"
-                        "- RESEARCH: General knowledge, deep information, or requests to 'look up' topics.\n"
-                        "- FILE_OP: Managing files/folders (create, delete, list, move, read).\n"
-                        "- SYSTEM_CMD: System-level tasks (open apps, volume, brightness, etc.).\n"
-                        "- ACTION: Direct singular commands not covered elsewhere.\n"
-                        "- PLAN: Complex, multi-step requests that require structured reasoning.\n\n"
-                        "EXAMPLES:\n"
-                        "\"Hello there\" -> CHAT\n"
-                        "\"How hot is it in Miami?\" -> WEATHER\n"
-                        "\"Who won the Oscar yesterday?\" -> WEB_SEARCH\n"
-                        "\"Explain the concept of quantum entanglement\" -> RESEARCH\n"
-                        "\"Delete the file 'old.txt'\" -> FILE_OP\n"
-                        "\"Open Spotify\" -> SYSTEM_CMD\n"
-                        "\"Research the future of SpaceX and write a report\" -> PLAN\n\n"
-                        f"Input: \"{query}\"\nCategory:"
+                        "### INTENT CLASSIFICATION GUIDELINES\n"
+                        "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier.\n\n"
+                        "### CATEGORIES\n"
+                        "1. CHAT: Social interactions, greetings, bot identity, or simple acknowledgement.\n"
+                        "2. RESEARCH: Knowledge lookups, news, weather, or finding facts online.\n"
+                        "3. SINGLE_ACTION: One-off system/file commands (opening apps, volume, file management).\n"
+                        "4. PLAN: Multi-step goals, data synthesis, or complex problem solving.\n\n"
+                        "### FEW-SHOT EXAMPLES\n"
+                        "- \"Hey there\" -> CHAT\n"
+                        "- \"Who are you?\" -> CHAT\n"
+                        "- \"Cool, thanks\" -> CHAT\n"
+                        "- \"What is the current temperature in NYC?\" -> RESEARCH\n"
+                        "- \"Find me the latest AI news\" -> RESEARCH\n"
+                        "- \"Who won the Super Bowl last year?\" -> RESEARCH\n"
+                        "- \"Mute my audio\" -> SINGLE_ACTION\n"
+                        "- \"Open the Calculator app\" -> SINGLE_ACTION\n"
+                        "- \"Delete meeting_notes.pdf\" -> SINGLE_ACTION\n"
+                        "- \"Read data.csv and find outliers\" -> PLAN\n"
+                        "- \"Research Apple stock and write a 1-page summary to my desktop\" -> PLAN\n"
+                        "- \"Find a recipe for Lasagna and list the ingredients in a new file\" -> PLAN\n\n"
+                        f"USER INPUT: \"{query}\"\n"
+                        "DECISION:"
                     ),
-                    "system": "You are a Strategic Intent Classifier. Respond with EXACTLY one word from the list."
+                    "system": "Respond ONLY with one word: CHAT, RESEARCH, SINGLE_ACTION, or PLAN."
                 }
                 results = await target_brain.execute_parallel([task])
                 intent_raw = results[0].upper() if results else ""
                 
-                valid_intents = ["CHAT", "WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD", "PLAN", "RESEARCH", "ACTION"]
+                valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
                 for i in valid_intents:
                     if i in intent_raw:
                         return i
@@ -289,24 +292,33 @@ class GenAIBrain:
         provider, model = self.select_model(TaskType.FAST)
         client = self.get_client(provider)
         
-        prompt = f"""Classify the user's intent into exactly one category:
+        prompt = f"""
+        ### INTENT CLASSIFICATION ENGINE
+        Classify the user's intent into exactly one of these categories:
         
-        'CHAT': Greetings, social talk, identity, or simple small talk.
-        'WEATHER': Questions about current weather, temperature, or forecasts.
-        'WEB_SEARCH': Searching for specific real-time information or fast facts.
-        'RESEARCH': Deep information retrieval or requests for general knowledge.
-        'FILE_OP': Interaction with the local file system (files/folders).
-        'SYSTEM_CMD': Direct system control commands (apps, volume, settings).
-        'ACTION': A single clear action request.
-        'PLAN': Complex multi-step instructions requiring planning.
+        'CHAT': Greetings, personality questions, social talk, or simple conversational turns.
+        'RESEARCH': Fact-finding, information retrieval, news, weather, or general knowledge search.
+        'SINGLE_ACTION': A single clear command (e.g. open app, system controls, file operations).
+        'PLAN': Multi-step goals, data analysis, or missions requiring a sequence of different skills.
         
-        ### CONVERSATION CONTEXT
-        Summary: {(context or {}).get('summary', 'None')}
-        Recent History: {json.dumps((context or {}).get('recent_history', []))}
+        ### EXAMPLES
+        - "Hi!" -> CHAT
+        - "What can you do?" -> CHAT
+        - "Population of Japan" -> RESEARCH
+        - "Latest technology news" -> RESEARCH
+        - "Turn up the volume" -> SINGLE_ACTION
+        - "Take a screenshot" -> SINGLE_ACTION
+        - "Find a restaurant and save its menu to a text file" -> PLAN
+        - "Analyze these logs and summarize the errors" -> PLAN
 
-        User Query: "{query}"
+        ### CONTEXT
+        Summary: {(context or {}).get('summary', 'None')}
+        Recent History: {json.dumps((context or {}).get('recent_history', [])[:-5])}
+
+        ### USER QUERY
+        "{query}"
         
-        Respond ONLY with the word: CHAT, WEATHER, WEB_SEARCH, RESEARCH, FILE_OP, SYSTEM_CMD, ACTION, or PLAN.
+        Respond ONLY with the word: CHAT, RESEARCH, SINGLE_ACTION, or PLAN.
         """
         
         try:
@@ -315,7 +327,7 @@ class GenAIBrain:
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
-                    max_tokens=10
+                    max_tokens=20
                 )
                 intent_raw = response.choices[0].message.content.strip().upper()
             elif provider == "anthropic":
@@ -323,7 +335,7 @@ class GenAIBrain:
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
-                    max_tokens=10
+                    max_tokens=20
                 )
                 intent_raw = response.content[0].text.strip().upper()
             else:
@@ -332,12 +344,8 @@ class GenAIBrain:
             # Robust mapping
             mapping = {
                 "CHAT": "CHAT",
-                "WEATHER": "WEATHER",
-                "WEB_SEARCH": "WEB_SEARCH",
                 "RESEARCH": "RESEARCH",
-                "FILE_OP": "FILE_OP",
-                "SYSTEM_CMD": "SYSTEM_CMD",
-                "ACTION": "ACTION",
+                "SINGLE_ACTION": "SINGLE_ACTION",
                 "PLAN": "PLAN"
             }
             

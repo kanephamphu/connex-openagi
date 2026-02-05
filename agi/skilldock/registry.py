@@ -240,10 +240,12 @@ class SkillRegistry:
             if skill.metadata.category == category
         ]
 
-    async def get_relevant_skills(self, query: str, limit: int = 5) -> List[Skill]:
+    async def get_relevant_skills(self, query: str, limit: int = 5, category: str = None, sub_category: str = None) -> List[Skill]:
         """
         Get the most relevant skills for a given query using a combination 
         of semantic search (vector) and keyword boosting (category/description).
+        
+        Now supports direct boosting for category/sub_category similarity.
         """
         if not query:
              return list(self._skills.values())[:limit]
@@ -270,7 +272,7 @@ class SkillRegistry:
                 if self.config.verbose:
                     print(f"[Warn] Query embedding failed: {e}")
 
-        # 2. Keyword Boosting & Fallback
+        # 2. Keyword & Taxonomic Boosting
         # If vector search failed or returned few results, or if we want to boost matches
         query_lower = query.lower()
         
@@ -285,13 +287,20 @@ class SkillRegistry:
             name = skill.metadata.name
             score = score_map.get(name, 0.0)
             
-            # Boost for category match
-            category = skill.metadata.category.lower()
-            sub_category = getattr(skill.metadata, 'sub_category', 'general').lower()
-            if category in query_lower or query_lower in category:
-                score += 0.5
-            if sub_category in query_lower or query_lower in sub_category:
+            # Taxonomic Boosting (Priority for similar tools)
+            cat = skill.metadata.category.lower()
+            sub = getattr(skill.metadata, 'sub_category', 'general').lower()
+            
+            if category and cat == category.lower():
+                score += 0.8 # Strong boost for same category
+            if sub_category and sub == sub_category.lower():
+                score += 0.4 # Additional boost for same sub-category
+                
+            # Legacy Keyword Boosting
+            if cat in query_lower or query_lower in cat:
                 score += 0.3
+            if sub in query_lower or query_lower in sub:
+                score += 0.1
                 
             # Boost for description keyword match
             desc = skill.metadata.description.lower()
