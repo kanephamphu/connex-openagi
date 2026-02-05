@@ -14,12 +14,12 @@ graph TD
     User --> Reflex
     
     subgraph Senses["Tier Peer Layer (Senses & Reactions)"]
-        Perception[Perception Layer]
-        Reflex[Reflex Layer]
+        Perception["Perception Layer"]
+        Reflex["Reflex Layer"]
     end
     
     subgraph Accelerator["Parallel Engine (Tier 8)"]
-        SubBrain{{Sub-Brain System}}
+        SubBrain{{"Sub-Brain System"}}
     end
     
     Perception <--> SubBrain
@@ -29,9 +29,9 @@ graph TD
     Reflex --> Orchestrator
     
     subgraph Core["Core Reasoning (Tier 1 & 2)"]
-        Planner[Planner / Tier 1]
-        Orchestrator[Orchestrator / Tier 2]
-        Corrector[Self-Correction / Immune System]
+        Planner["Planner / Tier 1"]
+        Orchestrator["Orchestrator / Tier 2"]
+        Corrector["Self-Correction / Immune System"]
     end
     
     Planner -- Action DAG --> Orchestrator
@@ -39,15 +39,15 @@ graph TD
     Corrector -- Patch --> Orchestrator
     
     subgraph Execution["Workers (Tier 3)"]
-        SkillDock[SkillDock]
+        SkillDock["SkillDock"]
     end
     
     Orchestrator -- Call --> SkillDock
     SkillDock -- Result --> Orchestrator
     
     subgraph Evolution["Self-Evolution (Tier 4)"]
-        Motivation[Motivation System]
-        Memory[Memory System]
+        Motivation["Motivation System"]
+        Memory["Memory System"]
     end
     
     Orchestrator -- Logs/Trace --> Motivation

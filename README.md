@@ -14,29 +14,29 @@ Connex AGI mimics biological cognitive systems by integrating **Deliberative Rea
 ```mermaid
 graph TD
     %% Define Nodes with Icons
-    User([👤 User Intent])
+    User(["👤 User Intent"])
     
-    subgraph Senses["<b>👁️ TIER PEER (SENSES & REACTIONS)</b>"]
-        Perception([👁️ Perception Layer])
-        Reflex([⚡ Reflex Layer])
+    subgraph Senses["👁️ TIER PEER (SENSES & REACTIONS)"]
+        Perception(["👁️ Perception Layer"])
+        Reflex(["⚡ Reflex Layer"])
     end
     
-    subgraph Accelerator["<b>🚀 TIER 8 (PARALLEL ENGINE)</b>"]
-        SubBrain{{🧠 Sub-Brain System<br/>(Local SmolLM)}}
+    subgraph Accelerator["🚀 TIER 8 (PARALLEL ENGINE)"]
+        SubBrain{{"🧠 Sub-Brain System<br/>(Local SmolLM)"}}
     end
     
-    subgraph Core["<b>🧠 CORE BRAIN (REASONING)</b>"]
-        Planner[[🏗️ Tier 1: Planner]]
-        Orchestrator[[⚙️ Tier 2: Orchestrator]]
+    subgraph Core["🧠 CORE BRAIN (REASONING)"]
+        Planner[["🏗️ Tier 1: Planner"]]
+        Orchestrator[["⚙️ Tier 2: Orchestrator"]]
     end
     
-    subgraph Workers["<b>🛠️ TIER 3 (EXECUTION)</b>"]
-        SkillDock[🔧 SkillDock / Workers]
+    subgraph Workers["🛠️ TIER 3 (EXECUTION)"]
+        SkillDock["🔧 SkillDock / Workers"]
     end
     
-    subgraph Evolution["<b>🌱 TIER 4 (SELF-EVOLUTION)</b>"]
-        Motivation[📈 Motivation System]
-        Memory[💾 Memory System]
+    subgraph Evolution["🌱 TIER 4 (SELF-EVOLUTION)"]
+        Motivation["📈 Motivation System"]
+        Memory["💾 Memory System"]
     end
 
     %% Flow Connections
