@@ -22,6 +22,12 @@ class MemoryManager:
         self.conversation_summary: str = ""
         self.max_history = 10 
         
+        # Emotional State
+        self.emotional_state: Dict[str, str] = {
+            "human_emotion": "neutral",
+            "agi_emotion": "neutral"
+        }
+        
         # Short-Term Cache (Volatile execution logs)
         self.short_term: List[Dict[str, Any]] = []
         self.max_short_term = 10
@@ -45,6 +51,11 @@ class MemoryManager:
         self.conversation_history.append({"role": role, "content": content})
         if len(self.conversation_history) > self.max_history:
             self.conversation_history.pop(0)
+
+    def update_emotional_state(self, human: str, agi: str):
+        """Update the detected emotional state."""
+        self.emotional_state["human_emotion"] = human
+        self.emotional_state["agi_emotion"] = agi
             
     async def update_conversation_summary(self):
         """

@@ -34,6 +34,7 @@ class PerceptionLayer:
             from .modules.time.system import TimePerception
             from .modules.weather.system import WeatherPerception
             from .modules.computer_info.system import ComputerInfoPerception
+            from .modules.emotion.system import EmotionPerception
             
             self.register_module(SystemMonitorPerception(self.config))
             self.register_module(WorkloadPerception(self.config, identity_manager=identity_manager))
@@ -42,6 +43,10 @@ class PerceptionLayer:
             self.register_module(TimePerception(self.config))
             self.register_module(WeatherPerception(self.config))
             self.register_module(ComputerInfoPerception(self.config))
+            
+            # Sub-brain aware modules
+            sub_brain = getattr(self.config, 'sub_brain_manager', None)
+            self.register_module(EmotionPerception(self.config, sub_brain_manager=sub_brain))
             
             if memory_manager:
                 self.register_module(IntentDriftPerception(self.config, memory_manager=memory_manager))

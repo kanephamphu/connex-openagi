@@ -9,6 +9,9 @@ dist/
 build/
 *.egg-info/
 
+# Models
+models/
+
 # Virtual Environments
 venv/
 env/

@@ -11,7 +11,72 @@ Connex AGI mimics biological cognitive systems by integrating **Deliberative Rea
 
 ![architecture software design](docs/assets/architecture_software_design.png)
 
-For a detailed technical breakdown of the 7-tier system, see **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+```mermaid
+graph TD
+    %% Define Nodes with Icons
+    User([👤 User Intent])
+    
+    subgraph Senses["<b>👁️ TIER PEER (SENSES & REACTIONS)</b>"]
+        Perception([👁️ Perception Layer])
+        Reflex([⚡ Reflex Layer])
+    end
+    
+    subgraph Accelerator["<b>🚀 TIER 8 (PARALLEL ENGINE)</b>"]
+        SubBrain{{🧠 Sub-Brain System<br/>(Local SmolLM)}}
+    end
+    
+    subgraph Core["<b>🧠 CORE BRAIN (REASONING)</b>"]
+        Planner[[🏗️ Tier 1: Planner]]
+        Orchestrator[[⚙️ Tier 2: Orchestrator]]
+    end
+    
+    subgraph Workers["<b>🛠️ TIER 3 (EXECUTION)</b>"]
+        SkillDock[🔧 SkillDock / Workers]
+    end
+    
+    subgraph Evolution["<b>🌱 TIER 4 (SELF-EVOLUTION)</b>"]
+        Motivation[📈 Motivation System]
+        Memory[💾 Memory System]
+    end
+
+    %% Flow Connections
+    User -->|Goal| Perception
+    User -->|Trigger| Reflex
+    
+    Perception <-->|Fast Data| SubBrain
+    Orchestrator <-->|Offload| SubBrain
+
+    Perception -->|Context| Planner
+    Reflex -->|Automated Plan| Orchestrator
+    
+    Planner -->|Action DAG| Orchestrator
+    Orchestrator -->|Skill Call| SkillDock
+    SkillDock -->|Result| Orchestrator
+    
+    Orchestrator -->|Trace| Motivation
+    Orchestrator -->|History| Memory
+    Motivation -.->|Learn| Planner
+    Memory -.->|Recall| Planner
+
+    %% Professional Styling
+    style User fill:#fff,stroke:#333,stroke-width:2px
+    style Perception fill:#e0f7fa,stroke:#00acc1,stroke-width:2px
+    style Reflex fill:#ffebee,stroke:#e53935,stroke-width:2px
+    style SubBrain fill:#f3e5f5,stroke:#8e24aa,stroke-width:3px,color:#4a148c
+    style Planner fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
+    style Orchestrator fill:#e8f5e9,stroke:#43a047,stroke-width:2px
+    style SkillDock fill:#f1f8e9,stroke:#7cb342,stroke-width:2px
+    style Motivation fill:#fff3e0,stroke:#fb8c00,stroke-width:2px
+    style Memory fill:#fff8e1,stroke:#ffb300,stroke-width:2px
+
+    %% Subgraph Styling
+    style Senses fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Core fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Evolution fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Workers fill:transparent,stroke:#999,stroke-dasharray: 5 5
+```
+
+For a detailed technical breakdown of the 8-tier system, see **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 
 ### 1. Perception Layer (Senses) 👁️
@@ -66,6 +131,13 @@ The persistent knowledge storage that enables long-term learning.
 - **Short-Term**: RAM-based cache for immediate dialogue context.
 - **Long-Term**: SQLite vector storage for semantic retrieval of past interactions.
 - **Process**: Daily summarization of logs into high-level "Experience Notes".
+
+### 8. Sub-Brain System (Local Acceleration) 🚀
+A parallel processing infrastructure for offloading auxiliary cognitive tasks to local LLMs.
+- **Purpose**: Fast, privacy-preserving execution of sub-tasks like emotion detection or intent classification.
+- **Architecture**: `SubBrainManager` coordinates multiple `SubBrainHost` instances.
+- **SmolLM Integration**: Uses `SmolLM-135M-Instruct` with 4-bit quantization for ultra-fast local inference.
+- **Cloud Fallback**: Automatically falls back to primary brain (Cloud) if local services are unavailable.
 
 ---
 

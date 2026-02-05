@@ -110,6 +110,9 @@ You MUST respond with a valid JSON object matching the ActionPlanSchema:
 }}
 """
 
+# Alias for backward compatibility
+PLANNER_SYSTEM_PROMPT = PLANNER_SYSTEM_PROMPT_TEMPLATE
+
 
 def render_system_prompt(skills: List[Any]) -> str:
     """

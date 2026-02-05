@@ -127,6 +127,10 @@ class GenAIBrain:
         Goal: "{goal}"
         Context: {json.dumps(context or {})}
 
+        ### EMOTIONAL CONTEXT
+        Detected User Emotion: {context.get('human_emotion', 'neutral')}
+        AGI Self-Reflection: {context.get('agi_emotion', 'neutral')}
+        
         ### CONVERSATION CONTEXT
         Summary: {context.get('conversation_summary', 'None')}
         Recent Turns: {json.dumps(context.get('conversation_history', []))}
@@ -220,6 +224,31 @@ class GenAIBrain:
         
         # Default fallback
         return self._get_default_provider_and_model()
+
+    def _get_default_provider_and_model(self) -> tuple[str, str]:
+        """Recursive fallback for defaults."""
+        if self.config.default_executor:
+            return self.config.default_executor, self.config.executor_model
+        
+        if self.config.openai_api_key:
+            return "openai", "gpt-4.1o-nano"
+        
+        raise ValueError("No default provider configured. Please set OPENAI_API_KEY or default_executor.")
+
+    async def classify_intent_fast(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
+        """
+        Classify intent using a local sub-brain if available, otherwise fallback to cloud.
+        """
+        if sub_brain_manager:
+            prompt = f"Classify the user's intent as either 'CHAT' or 'ACTION'. Query: \"{query}\". Respond ONLY with the word 'CHAT' or 'ACTION'."
+            try:
+                results = await sub_brain_manager.execute_parallel([{"prompt": prompt}])
+                intent = results[0].upper() if results else "ACTION"
+                return "CHAT" if "CHAT" in intent else "ACTION"
+            except:
+                 pass # Fallback to cloud
+        
+        return await self.classify_intent(query, context)
 
     async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
         """

@@ -1,6 +1,6 @@
 # Connex AGI Technical Architecture
 
-This document provides a deep dive into the 7-tier architecture of Connex AGI.
+This document provides a deep dive into the 8-tier architecture of Connex AGI.
 
 ## High-Level Cognitive Architecture
 
@@ -18,6 +18,13 @@ graph TD
         Reflex[Reflex Layer]
     end
     
+    subgraph Accelerator["Parallel Engine (Tier 8)"]
+        SubBrain{{Sub-Brain System}}
+    end
+    
+    Perception <--> SubBrain
+    Orchestrator <--> SubBrain
+
     Perception --> Planner
     Reflex --> Orchestrator
     
@@ -48,6 +55,8 @@ graph TD
     Motivation -- Proposal --> Planner
     Memory -- Recall --> Planner
     Motivation -- Skill Acquisition --> SkillDock
+    
+    style SubBrain fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ## Layer Descriptions
@@ -94,3 +103,8 @@ graph TD
 - **Role**: Experience Storage.
 - **Mechanism**: SQLite-backed Vector DB.
 - **Function**: Provides semantic recall of past interactions and daily experience summarization.
+
+### 8. Sub-Brain System (Tier 8)
+- **Role**: Local Acceleration & Parallelization.
+- **Mechanism**: Distributed local LLM hosts (e.g., SmolLM-135M-Instruct).
+- **Function**: Offloads intensive but straightforward tasks like emotion detection, formatting, or intent classification from the main Brain, allowing for faster response times and improved privacy.

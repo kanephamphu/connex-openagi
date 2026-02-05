@@ -27,6 +27,7 @@ from agi.perception import PerceptionLayer
 from agi.reflex import ReflexLayer
 from agi.memory.manager import MemoryManager
 from agi.motivation.engine import MotivationEngine
+from agi.sub_brain import SubBrainManager
 
 __version__ = "0.1.1"
 __all__ = ["AGI", "AGIConfig", "Planner", "Orchestrator", "SkillRegistry", "GenAIBrain"]
@@ -43,6 +44,7 @@ class AGI:
         """
         self.config = config or AGIConfig.from_env()
         self.brain = GenAIBrain(self.config)
+        self.sub_brain = SubBrainManager(self.config)
         self.loop = asyncio.get_event_loop() # Store loop for thread-safe sensor callbacks
         
         # Audio Management
@@ -61,6 +63,7 @@ class AGI:
         self.perception = PerceptionLayer(self.config)
         self.reflex = ReflexLayer(self.config)
         self.memory = MemoryManager(self.config, self.brain)
+        setattr(self.config, 'memory_manager', self.memory)
         
         # Register new memory skill manually if not dynamic already
         from agi.skilldock.skills.memory.scripts.agent import MemorySkill
@@ -97,6 +100,10 @@ class AGI:
         from agi.skilldock.skills.agi_interface.scripts.agent import AGIInterfaceSkill
         self.skill_registry.register(AGIInterfaceSkill(self.config, self.execute))
         
+        # Emotion Skill
+        from agi.skilldock.skills.emotion.scripts.agent import EmotionDetectionSkill
+        self.skill_registry.register(EmotionDetectionSkill(self.config))
+        
         self.history = HistoryManager(data_dir=str(self.config.data_dir) if hasattr(self.config, 'data_dir') else "data")
         
         # Set default verbose for demo if not in environment
@@ -107,11 +114,15 @@ class AGI:
         """Perform async initialization tasks."""
         if self.config.verbose:
             print("[AGI] Running startup initialization...")
+        await self.sub_brain.initialize()
         from agi.identity.manager import IdentityManager
         self.identity = IdentityManager(self.config)
         
         await self.skill_registry.ensure_embeddings()
         await self.skill_registry.initialize_all_skills()
+        # Attach sub-brain to config for easier perception access
+        setattr(self.config, 'sub_brain_manager', self.sub_brain)
+        
         await self.perception.initialize(
             memory_manager=self.memory, 
             skill_registry=self.skill_registry,
@@ -131,6 +142,15 @@ class AGI:
         except Exception as e:
             if self.config.verbose:
                 print(f"[AGI] Could not start Ear sensor: {e}")
+
+        # Initialize and Start the 'Time' sensor
+        try:
+            from agi.sensors.time.time_sensor import TimeSensor
+            self.time_sensor = TimeSensor(self.config, on_event_callback=self.handle_sensor_event_sync)
+            self.time_sensor.start()
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[AGI] Could not start Time sensor: {e}")
 
         if self.config.verbose:
             print("[AGI] Initialization complete.")
@@ -194,16 +214,22 @@ class AGI:
             if context:
                 print(f"[AGI] Context: {context}")
 
+        # --- Emotion Detection (Parallel via Sub-Brains) ---
+        asyncio.create_task(self.perception.perceive("emotion", goal))
+
         # --- NEW: Working Memory Integration ---
         working_memory = self.memory.get_working_memory()
+        emotional_context = self.memory.emotional_state
+        
         merged_context = {
             **(context or {}),
             "conversation_history": working_memory["recent_history"],
-            "conversation_summary": working_memory["summary"]
+            "conversation_summary": working_memory["summary"],
+            **emotional_context
         }
 
         # --- Intent Routing ---
-        intent = await self.brain.classify_intent(goal, working_memory)
+        intent = await self.brain.classify_intent_fast(goal, working_memory, self.sub_brain)
         if self.config.verbose:
             print(f"[AGI] Detected intent: {intent}")
             
@@ -295,6 +321,10 @@ class AGI:
             # --- NEW: Reasoning Phase (Inner Monologue) ---
             if self.config.verbose:
                 print("[AGI] Entering reasoning phase...")
+            
+            # --- Emotion Detection (Parallel via Sub-Brains) ---
+            asyncio.create_task(self.perception.perceive("emotion", goal))
+            
             reasoning_content = ""
             
             # Inject available skills so the Brain knows what it can do
@@ -310,19 +340,25 @@ class AGI:
                 full_trace.append({"phase": "planning", **update, "partial_content": reasoning_content})
                 yield {"phase": "planning", **update, "partial_content": reasoning_content}
 
+            # --- Emotion Detection (Parallel via Sub-Brains) ---
+            asyncio.create_task(self.perception.perceive("emotion", goal))
+            
             if self.config.verbose:
                 print("[AGI] Reasoning complete. Classifying intent...")
 
             # --- NEW: Working Memory ---
             working_memory = self.memory.get_working_memory()
+            emotional_context = self.memory.emotional_state
+            
             merged_context = {
                 **(context or {}),
                 "conversation_history": working_memory["recent_history"],
-                "conversation_summary": working_memory["summary"]
+                "conversation_summary": working_memory["summary"],
+                **emotional_context
             }
 
             # --- Intent Classification ---
-            intent = await self.brain.classify_intent(goal, working_memory)
+            intent = await self.brain.classify_intent_fast(goal, working_memory, self.sub_brain)
             if self.config.verbose:
                 print(f"[AGI] Detected intent: {intent}")
                 

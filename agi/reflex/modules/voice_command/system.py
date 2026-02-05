@@ -78,14 +78,34 @@ class VoiceCommandReflex(ReflexModule):
         return False
 
     async def get_plan(self) -> List[Dict[str, Any]]:
+        # Get full conversation context if memory is available
+        memory = getattr(self.config, 'memory_manager', None)
+        full_conversation = self.last_command
+        
+        if memory:
+            history = memory.conversation_history
+            if history:
+                conv_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in history])
+                full_conversation = f"{conv_text}\nUser: {self.last_command}"
+
         return [
+            {
+                "id": "detect_emotion",
+                "skill": "emotion_detection",
+                "description": "Analyzing target human emotions and self emotions in parallel with full conversation context.",
+                "inputs": {
+                    "text": full_conversation
+                },
+                "depends_on": []
+            },
             {
                 "id": "delegate_to_brain",
                 "skill": "agi_brain_interface",
-                "description": "Delegating spoken command to the AGI brain for decomposition.",
+                "description": "Delegating spoken command to the AGI brain for decomposition with emotional awareness and full conversation context.",
                 "inputs": {
-                    "goal": self.last_command,
+                    "goal": full_conversation,
                     "speak": True
                 },
+                "depends_on": ["detect_emotion"]
             }
         ]

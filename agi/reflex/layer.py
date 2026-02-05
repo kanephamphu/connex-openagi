@@ -27,6 +27,9 @@ class ReflexLayer:
              from .modules.smart_clipboard.system import ClipboardReflex
              from .modules.scheduler.system import SchedulerReflex
              from .modules.weather_alert.system import WeatherAlertReflex
+             from .modules.time_handlers.calendar_handler import CalendarReflex
+             from .modules.time_handlers.deadline_handler import DeadlineReflex
+             from .modules.time_handlers.healthcare_handler import HealthcareReflex
              
              self.register_reflex(AutoRecoveryReflex(self.config))
              self.register_reflex(SafetyPolicyReflex(self.config))
@@ -35,6 +38,9 @@ class ReflexLayer:
              self.register_reflex(ClipboardReflex(self.config))
              self.register_reflex(SchedulerReflex(self.config))
              self.register_reflex(WeatherAlertReflex(self.config))
+             self.register_reflex(CalendarReflex(self.config))
+             self.register_reflex(DeadlineReflex(self.config))
+             self.register_reflex(HealthcareReflex(self.config))
              
              if history_manager:
                  from .modules.self_repair.system import SelfRepairReflex
