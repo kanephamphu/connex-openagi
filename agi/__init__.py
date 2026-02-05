@@ -258,7 +258,7 @@ class AGI:
             }
 
         # --- Fast Intent Handling (Skip Planning for simple known tasks) ---
-        fast_intents = ["WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD"]
+        fast_intents = ["WEATHER", "WEB_SEARCH", "RESEARCH", "FILE_OP", "SYSTEM_CMD", "ACTION"]
         if intent in fast_intents:
             fast_result = await self._handle_fast_intent(intent, goal, speak_output)
             if fast_result:
@@ -282,9 +282,14 @@ class AGI:
 
         # Finalize response
         final_reply = ""
-        # If we need to speak the final result (for ACTION mode)
-        if speak_output and result.success:
-            final_reply = str(result.output.get("reply") or result.output.get("text") or result.output.get("response") or "Task completed.")
+        # If we need to speak the final result
+        if speak_output:
+            if result.success:
+                final_reply = str(result.output.get("reply") or result.output.get("text") or result.output.get("response") or "Task completed.")
+            else:
+                error_list = result.errors or ["An unknown error occurred."]
+                final_reply = f"I'm sorry, I encountered an error: {error_list[0]}"
+            
             if final_reply:
                 speak_skill = self.skill_registry.get_skill("speak")
                 await speak_skill.execute(text=final_reply)
@@ -317,12 +322,12 @@ class AGI:
         full_trace = []
         
         try:
-            # Helper to yield and capture
-            async def yield_and_capture(evt):
+            async def yield_evt(evt: Dict[str, Any]):
+                """Helper to log and yield events."""
                 full_trace.append(evt)
                 yield evt
 
-            async for evt in yield_and_capture({"phase": "planning", "type": "planning_started", "goal": "Analyzing your request..."}):
+            async for evt in yield_evt({"phase": "planning", "type": "planning_started", "goal": "Analyzing your request..."}):
                 yield evt
             
             # --- NEW: Reasoning Phase (Inner Monologue) ---
@@ -341,15 +346,11 @@ class AGI:
             async for update in self.brain.reason(goal, reasoning_context):
                 if update["type"] == "reasoning_token":
                     reasoning_content += update["token"]
-                # We don't capture every token in trace to save space, only final content or chunks?
-                # Actually, UI needs tokens. But storing thousands of tokens in JSON is bad.
-                # Let's verify if we want to store tokens. For now, yes, but maybe consolidated later.
-                full_trace.append({"phase": "planning", **update, "partial_content": reasoning_content})
-                yield {"phase": "planning", **update, "partial_content": reasoning_content}
+                
+                # Capture reasoning updates
+                async for evt in yield_evt({"phase": "planning", **update, "partial_content": reasoning_content}):
+                    yield evt
 
-            # --- Emotion Detection (Parallel via Sub-Brains) ---
-            asyncio.create_task(self.perception.perceive("emotion", goal))
-            
             if self.config.verbose:
                 print("[AGI] Reasoning complete. Classifying intent...")
 
@@ -399,34 +400,29 @@ class AGI:
                     if chunk.choices[0].delta.content:
                         token = chunk.choices[0].delta.content
                         content += token
-                        evt = {
+                        async for evt in yield_evt({
                             "phase": "execution",
                             "type": "action_completed",
                             "action_id": "chat_response",
                             "output": {"reply": content}
-                        }
-                        yield evt
+                        }):
+                            yield evt
                 
                 # Store final in memory
                 self.memory.add_to_short_term(goal, content)
                 asyncio.create_task(self.memory.update_conversation_summary())
-
-                # Append final result to trace
-                full_trace.append({
-                    "phase": "execution",
-                    "type": "action_completed", 
-                    "action_id": "chat_response", 
-                    "output": {"reply": content}
-                })
                 return
 
             # --- Fast Intent Handling (Skip Planning for simple known tasks) ---
-            fast_intents = ["WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD"]
+            fast_intents = ["WEATHER", "WEB_SEARCH", "RESEARCH", "FILE_OP", "SYSTEM_CMD", "ACTION"]
             if intent in fast_intents:
-                yield {"phase": "planning", "type": "fast_path_triggered", "intent": intent}
+                async for evt in yield_evt({"phase": "planning", "type": "fast_path_triggered", "intent": intent}):
+                    yield evt
+                
                 fast_result = await self._handle_fast_intent(intent, goal, self.config.speak_output)
                 if fast_result:
-                    yield {"phase": "execution", "type": "fast_result", "data": fast_result}
+                    async for evt in yield_evt({"phase": "execution", "type": "fast_result", "data": fast_result}):
+                        yield evt
                     return
 
             # Tier 1: Plan the actions (ACTION intent)
@@ -444,8 +440,8 @@ class AGI:
                     final_plan = update["plan"]
                     update["plan"] = final_plan.to_dict()
                 
-                full_trace.append({"phase": "planning", **update})
-                yield {"phase": "planning", **update}
+                async for evt in yield_evt({"phase": "planning", **update}):
+                    yield evt
             
             if not final_plan:
                 if self.config.verbose:
@@ -456,18 +452,14 @@ class AGI:
             if self.config.verbose:
                 print("[AGI] Executing plan...")
             async for update in self.orchestrator.execute_plan_streaming(final_plan):
-                # StepResult objects might be in the update, handle them
                 if "result" in update and hasattr(update["result"], "to_dict"):
                     update["result"] = update["result"].to_dict()
                 
-                full_trace.append({"phase": "execution", **update})
-                yield {"phase": "execution", **update}
+                async for evt in yield_evt({"phase": "execution", **update}):
+                    yield evt
 
             # --- NEW: Persistence Stage ---
-            # After successful execution, add to short-term cache
             if final_plan:
-                # We could summarize the entire run here or just save the goal/result
-                # For simplicity, let's just record the interaction
                 self.memory.add_to_short_term(goal, "Task completed successfully.") 
 
             # --- NEW: Motivation Stage ---
@@ -490,22 +482,40 @@ class AGI:
                     )
                     improvement_dag = ActionPlan(goal=goal, actions=[imp_action])
                     
-                    yield {"phase": "motivation", "type": "improvement_triggered", "suggestion": improvement_suggestion}
+                    async for evt in yield_evt({"phase": "motivation", "type": "improvement_triggered", "suggestion": improvement_suggestion}):
+                        yield evt
                     
                     async for update in self.orchestrator.execute_plan_streaming(improvement_dag):
                         if "result" in update and hasattr(update["result"], "to_dict"):
                             update["result"] = update["result"].to_dict()
-                        full_trace.append({"phase": "motivation", **update})
-                        yield {"phase": "motivation", **update}
-
+                        async for evt in yield_evt({"phase": "motivation", **update}):
+                            yield evt
 
         except Exception as e:
-            print(f"[AGI] CRITICAL ERROR in execute_with_streaming: {e}")
+            error_msg = str(e)
+            print(f"[AGI] CRITICAL ERROR in execute_with_streaming: {error_msg}")
             import traceback
             traceback.print_exc()
-            err_evt = {"phase": "planning", "type": "error", "message": str(e)}
+            
+            err_evt = {"phase": "planning", "type": "error", "message": error_msg}
             full_trace.append(err_evt)
             yield err_evt
+            
+            # Announce error if speaking is enabled
+            if self.config.is_speaking or getattr(self.config, 'speak_output', False):
+                try:
+                    speak_skill = self.skill_registry.get_skill("speak")
+                    if speak_skill:
+                        await speak_skill.execute(text=f"I'm sorry, I encountered an error: {error_msg}")
+                except:
+                    pass
+        finally:
+            # Save history
+            try:
+                self.history.add_trace(goal, full_trace)
+            except Exception as h_err:
+                if self.config.verbose:
+                    print(f"[AGI] Failed to save history: {h_err}")
             
     async def _handle_fast_intent(self, intent: str, goal: str, speak_output: bool) -> Optional[Dict[str, Any]]:
         """
@@ -514,8 +524,10 @@ class AGI:
         skill_map = {
             "WEATHER": ("weather", "Extract the location (city) from the goal. Respond with ONLY the JSON object like {\"location\": \"City\"}."),
             "WEB_SEARCH": ("web_search", "Extract the search query. Respond with ONLY the JSON object like {\"query\": \"Search text\"}."),
-            "SYSTEM_CMD": ("system", "Extract the application name. Respond with ONLY the JSON object like {\"app\": \"Name\"}."),
-            "FILE_OP": ("file_manager", "Parse the file action. Respond with ONLY the JSON like {\"action\": \"list\", \"path\": \".\"} or {\"action\": \"delete\", \"path\": \"file\"}.")
+            "RESEARCH": ("web_search", "Extract the topic to research. Respond with ONLY the JSON object like {\"query\": \"Research topic\"}."),
+            "SYSTEM_CMD": ("system", "Extract the application name or command. Respond with ONLY the JSON object like {\"app\": \"Name\"}."),
+            "FILE_OP": ("file_manager", "Parse the file action. Respond with ONLY the JSON like {\"action\": \"list\", \"path\": \".\"} or {\"action\": \"delete\", \"path\": \"file\"}"),
+            "ACTION": ("system", "Extract the command. Respond with ONLY the JSON object like {\"command\": \"direct action\"}.")
         }
 
         if intent not in skill_map:
@@ -556,19 +568,25 @@ class AGI:
             result_data = await skill.execute(**params)
             
             # 3. Handle Speak and Memory
-            reply = "I've handled that for you."
-            if intent == "WEATHER" and result_data.get("success"):
+            reply = ""
+            is_error = "error" in result_data or result_data.get("success") is False
+            
+            if is_error:
+                error_msg = result_data.get("error") or result_data.get("message") or "Unknown error."
+                reply = f"I'm sorry, I encountered an error: {error_msg}"
+            elif intent == "WEATHER":
                 reply = f"The weather in {result_data.get('location')} is {result_data.get('temperature')}°C and {result_data.get('condition')}."
             elif intent == "WEB_SEARCH":
-                # For search, we might need a mini-summary? 
-                # For fast-track, let's just use the results.
                 reply = f"I found some information about that: {str(result_data.get('results', []))[:200]}..."
             elif result_data.get("message"):
                 reply = result_data["message"]
+            else:
+                reply = "I've handled that for you."
 
             if speak_output and reply:
                 speak_skill = self.skill_registry.get_skill("speak")
-                await speak_skill.execute(text=reply)
+                if speak_skill:
+                    await speak_skill.execute(text=reply)
 
             self.memory.add_to_short_term(goal, reply)
             asyncio.create_task(self.memory.update_conversation_summary())
@@ -584,10 +602,3 @@ class AGI:
             if self.config.verbose:
                 print(f"[AGI] Fast execution failed: {e}. Falling back to Planner.")
             return None
-
-        finally:
-            # Save history
-            try:
-                self.history.add_trace(goal, full_trace)
-            except Exception as h_err:
-                print(f"[AGI] Failed to save history: {h_err}")

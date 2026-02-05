@@ -93,13 +93,32 @@ def stream_generator(prompt: str, request: ChatCompletionRequest) -> Generator[s
         input_ids=inputs,
         streamer=streamer,
         max_new_tokens=request.max_tokens,
-        temperature=request.temperature,
+        temperature=max(request.temperature, 0.01) if request.temperature > 0 else 1.0,
         do_sample=True if request.temperature > 0 else False,
+        top_p=0.9,
+        top_k=50,
+        repetition_penalty=1.1,
         pad_token_id=tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id
     )
     
-    thread = Thread(target=model.generate, kwargs=generation_kwargs)
+    def safe_generate():
+        try:
+            model.generate(**generation_kwargs)
+        except RuntimeError as e:
+            if "probability tensor contains" in str(e):
+                print(f"[!] Streaming instability detected. Retrying with greedy decoding...")
+                fallback_kwargs = generation_kwargs.copy()
+                fallback_kwargs["do_sample"] = False
+                # Remove sampling-specific keys
+                fallback_kwargs.pop("temperature", None)
+                fallback_kwargs.pop("top_p", None)
+                fallback_kwargs.pop("top_k", None)
+                model.generate(**fallback_kwargs)
+            else:
+                raise e
+
+    thread = Thread(target=safe_generate)
     thread.start()
     
     for i, new_text in enumerate(streamer):
@@ -142,15 +161,32 @@ async def chat_completions(request: ChatCompletionRequest):
     
     # Non-streaming implementation
     inputs = tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
-    with torch.no_grad():
-        outputs = model.generate(
-            inputs, 
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature,
-            do_sample=True if request.temperature > 0 else False,
-            pad_token_id=tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id
-        )
+    try:
+        with torch.no_grad():
+            outputs = model.generate(
+                inputs, 
+                max_new_tokens=request.max_tokens,
+                temperature=max(request.temperature, 0.01) if request.temperature > 0 else 1.0,
+                do_sample=True if request.temperature > 0 else False,
+                top_p=0.9,
+                top_k=50,
+                repetition_penalty=1.1,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+    except RuntimeError as e:
+        if "probability tensor contains" in str(e):
+            print(f"[!] Numerical instability detected. Falling back to greedy decoding...")
+            with torch.no_grad():
+                outputs = model.generate(
+                    inputs, 
+                    max_new_tokens=request.max_tokens,
+                    do_sample=False,
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id
+                )
+        else:
+            raise e
     
     response_text = tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True).strip()
 

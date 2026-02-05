@@ -23,44 +23,63 @@ class PerceptionLayer:
         self.db = DatabaseManager()
         
     async def initialize(self, memory_manager=None, skill_registry=None, identity_manager=None):
-        """Initialize all registered perception modules."""
-        # For demo purposes, load the mock modules
-        try:
-            from .modules.system_monitor.system import SystemMonitorPerception
-            from .modules.workload.system import WorkloadPerception
-            from .modules.intent_drift.system import IntentDriftPerception
-            from .modules.voice.system import VoicePerception
-            from .modules.clipboard.system import ClipboardPerception
-            from .modules.time.system import TimePerception
-            from .modules.weather.system import WeatherPerception
-            from .modules.computer_info.system import ComputerInfoPerception
-            from .modules.emotion.system import EmotionPerception
-            
-            self.register_module(SystemMonitorPerception(self.config))
-            self.register_module(WorkloadPerception(self.config, identity_manager=identity_manager))
-            self.register_module(VoicePerception(self.config))
-            self.register_module(ClipboardPerception(self.config))
-            self.register_module(TimePerception(self.config))
-            self.register_module(WeatherPerception(self.config))
-            self.register_module(ComputerInfoPerception(self.config))
-            
-            # Sub-brain aware modules
-            sub_brain = getattr(self.config, 'sub_brain_manager', None)
-            self.register_module(EmotionPerception(self.config, sub_brain_manager=sub_brain))
-            
-            if memory_manager:
-                self.register_module(IntentDriftPerception(self.config, memory_manager=memory_manager))
+        """Initialize all registered perception modules with robustness."""
+        modules_to_load = [
+            (".modules.system_monitor.system", "SystemMonitorPerception", []),
+            (".modules.workload.system", "WorkloadPerception", ["identity_manager"]),
+            (".modules.voice.system", "VoicePerception", []),
+            (".modules.clipboard.system", "ClipboardPerception", []),
+            (".modules.time.system", "TimePerception", []),
+            (".modules.weather.system", "WeatherPerception", []),
+            (".modules.computer_info.system", "ComputerInfoPerception", []),
+            (".modules.emotion.system", "EmotionPerception", ["sub_brain_manager"]),
+            (".modules.intent_drift.system", "IntentDriftPerception", ["memory_manager"]),
+            (".modules.capability.system", "CapabilityPerception", ["skill_registry"])
+        ]
+
+        sub_brain = getattr(self.config, 'sub_brain_manager', None)
+
+        for module_path, class_name, deps in modules_to_load:
+            try:
+                # Dynamic import
+                spec = importlib.util.find_spec(module_path, package="agi.perception")
+                if not spec:
+                    if self.config.verbose:
+                        print(f"[Perception] Module path not found: {module_path}")
+                    continue
                 
-            if skill_registry:
-                from .modules.capability.system import CapabilityPerception
-                self.register_module(CapabilityPerception(self.config, skill_registry=skill_registry))
+                module_lib = importlib.import_module(module_path, package="agi.perception")
+                cls = getattr(module_lib, class_name)
                 
-            # Async Embedding Generation
-            await self.ensure_embeddings()
-            
-        except ImportError:
-            pass
-        pass
+                # Prepare arguments
+                args = {"config": self.config}
+                if "memory_manager" in deps and memory_manager:
+                    args["memory_manager"] = memory_manager
+                if "skill_registry" in deps and skill_registry:
+                    args["skill_registry"] = skill_registry
+                if "identity_manager" in deps and identity_manager:
+                    args["identity_manager"] = identity_manager
+                if "sub_brain_manager" in deps:
+                    args["sub_brain_manager"] = sub_brain
+                
+                # Skip if required dependency is missing
+                missing_deps = [d for d in deps if d not in args or args[d] is None]
+                if missing_deps:
+                    if self.config.verbose:
+                        print(f"[Perception] Skipping {class_name}: missing deps {missing_deps}")
+                    continue
+
+                self.register_module(cls(**args))
+                
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[Perception] Failed to load {class_name}: {e}")
+                import traceback
+                if self.config.verbose:
+                    traceback.print_exc()
+
+        # Generate Embeddings for all successfully loaded modules
+        await self.ensure_embeddings()
         
     def register_module(self, module: PerceptionModule):
         """Register a new perception module instance."""

@@ -36,30 +36,13 @@ class SubBrainHost:
                 return False
 
     async def initialize(self) -> bool:
-        """Ensure the host service is running and healthy."""
-        if await self.is_healthy():
-            print(f"[SubBrainHost-{self.host_id}] Service already healthy at {self.url}")
+        """Check if the external host service is healthy."""
+        is_up = await self.is_healthy()
+        if is_up:
+            print(f"[SubBrainHost-{self.host_id}] Service healthy at {self.url}")
             return True
-
-        print(f"[SubBrainHost-{self.host_id}] Starting service: {self.init_command}")
-        try:
-            self.process = await asyncio.create_subprocess_shell(
-                self.init_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # Wait for health check with linear backoff
-            for i in range(15): # wait up to 30 seconds
-                await asyncio.sleep(2)
-                if await self.is_healthy():
-                    print(f"[SubBrainHost-{self.host_id}] Service healthy after {i*2}s.")
-                    return True
-            
-            print(f"[SubBrainHost-{self.host_id}] Service failed to start or become healthy.")
-            return False
-        except Exception as e:
-            print(f"[SubBrainHost-{self.host_id}] Error starting host: {e}")
+        else:
+            print(f"[SubBrainHost-{self.host_id}] ERR: Service not responding at {self.url}. Ensure it is running (e.g. via ./run_smol_brain.sh).")
             return False
 
     async def stop(self):

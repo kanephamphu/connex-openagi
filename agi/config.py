@@ -48,6 +48,7 @@ class AGIConfig:
     is_speaking: bool = False  # NEW: Global flag to prevent self-triggering via Mic
     is_listening: bool = False # NEW: Global flag to prevent interrupting user
     on_speak_callback: Optional[Any] = None # NEW: Callback for echo cancellation
+    speak_output: bool = False # NEW: Whether to vocally announce results/errors
     
     # Sub-Brain Configuration
     sub_brain_count: int = 2 # Number of parallel small brains
@@ -61,6 +62,7 @@ class AGIConfig:
     executor_model: str = "gpt-4.1-nano"
     temperature: float = 0.7
     max_tokens: int = 4096
+    max_history: int = 10  # Limit to 10 recently messages
     
     # Registry Configuration
     registry_url: str = "http://localhost:8000/api/v1"
@@ -116,6 +118,8 @@ class AGIConfig:
             sub_brain_init_command=os.getenv("AGI_SUB_BRAIN_INIT", "./run_smol_brain.sh"),
             sub_brain_health_endpoint=os.getenv("AGI_SUB_BRAIN_HEALTH", "http://localhost:11434/api/health"),
             use_external_subbrain=os.getenv("AGI_USE_EXTERNAL_SUBBRAIN", "true").lower() == "true",
+            max_history=int(os.getenv("AGI_MAX_HISTORY", "10")),
+            speak_output=os.getenv("AGI_SPEAK_OUTPUT", "false").lower() == "true",
         )
         
         # Load overlays from Database

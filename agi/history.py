@@ -57,9 +57,9 @@ class HistoryManager:
         history = self._load()
         history.insert(0, entry) # Prepend (newest first)
         
-        # Limit to last 50 runs to keep file size sane
-        if len(history) > 50:
-            history = history[:50]
+        # Limit to last 10 runs to keep file size sane and follow user request
+        if len(history) > 10:
+            history = history[:10]
             
         self._save(history)
         return entry_id

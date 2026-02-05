@@ -61,7 +61,7 @@ class VoiceEar:
 
                 if self.config.is_speaking:
                     # Mute while AGI is talking
-                    time.sleep(1.5) # Wait slightly longer
+                    time.sleep(1) # Wait slightly longer
                     continue
 
                 with self.microphone as source:
@@ -71,7 +71,7 @@ class VoiceEar:
                     
                     try:
                         # Listen for a chunk. timeout=1 means if 0 sound for 1s, raise WaitTimeoutError
-                        audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=15)
+                        audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
                     finally:
                         if self.config:
                             self.config.is_listening = False
@@ -115,9 +115,6 @@ class VoiceEar:
         full_text = " ".join(self.phrase_buffer)
         self.phrase_buffer = []
         
-        # Ignore very short or echo-like commands if needed
-        if len(full_text) < 3:
-            return
 
         print(f"[Ear] >>> DEBOUNCE COMPLETE: \"{full_text}\"")
         

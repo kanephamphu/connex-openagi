@@ -83,7 +83,7 @@ class VoiceCommandReflex(ReflexModule):
         full_conversation = self.last_command
         
         if memory:
-            history = memory.conversation_history
+            history = memory.conversation_history[:5]
             if history:
                 conv_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in history])
                 full_conversation = f"{conv_text}\nUser: {self.last_command}"
@@ -94,7 +94,7 @@ class VoiceCommandReflex(ReflexModule):
                 "skill": "emotion_detection",
                 "description": "Analyzing target human emotions and self emotions in parallel with full conversation context.",
                 "inputs": {
-                    "text": full_conversation
+                    "text": self.last_command
                 },
                 "depends_on": []
             },

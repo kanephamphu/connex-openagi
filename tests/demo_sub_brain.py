@@ -24,30 +24,37 @@ async def run_demo():
         "Tell me a joke",
         "Create a file named hello.txt",
         "Search for Michael Jackson music on YouTube",
-        "Who founded Microsoft?"
+        "Who founded Microsoft?",
+        "Explain the process of photosynthesis",
+        "Open Calculator"
     ]
     
     tasks = []
     for query in queries:
         prompt = (
-            "Task: Classify Input into EXACTLY one category:\n"
-            "- CHAT: Greetings, social talk, identity.\n"
-            "- WEATHER: Questions about weather/temperature.\n"
-            "- WEB_SEARCH: Fact questions, news, searching info.\n"
-            "- FILE_OP: Creating, deleting, or managing files/folders.\n"
-            "- SYSTEM_CMD: Opening apps, brightness, volume, etc.\n"
-            "- PLAN: Complex multi-step requests.\n\n"
-            "Example 1: \"Hello\" -> CHAT\n"
-            "Example 2: \"How is the weather in Paris?\" -> WEATHER\n"
-            "Example 3: \"Who is the president?\" -> WEB_SEARCH\n"
-            "Example 4: \"Make a new file called 'test.py'\" -> FILE_OP\n"
-            "Example 5: \"Open Chrome\" -> SYSTEM_CMD\n"
-            "Example 6: \"Analyze this folder and write a report\" -> PLAN\n"
+            "Task: Classify User Input into EXACTLY one category.\n\n"
+            "CATEGORIES:\n"
+            "- CHAT: Greetings, social talk, identity, or simple conversational filler.\n"
+            "- WEATHER: Questions about weather, temperature, or forecasts.\n"
+            "- WEB_SEARCH: Fact questions, current news, searching for specific info online.\n"
+            "- RESEARCH: General knowledge, deep information, or requests to 'look up' topics.\n"
+            "- FILE_OP: Managing files/folders (create, delete, list, move, read).\n"
+            "- SYSTEM_CMD: System-level tasks (open apps, volume, brightness, etc.).\n"
+            "- ACTION: Direct singular commands not covered elsewhere.\n"
+            "- PLAN: Complex, multi-step requests that require structured reasoning.\n\n"
+            "EXAMPLES:\n"
+            "\"Hello there\" -> CHAT\n"
+            "\"How hot is it in Miami?\" -> WEATHER\n"
+            "\"Who won the Oscar yesterday?\" -> WEB_SEARCH\n"
+            "\"Explain the concept of quantum entanglement\" -> RESEARCH\n"
+            "\"Delete the file 'old.txt'\" -> FILE_OP\n"
+            "\"Open Spotify\" -> SYSTEM_CMD\n"
+            "\"Research the future of SpaceX and write a report\" -> PLAN\n\n"
             f"Input: \"{query}\"\nCategory:"
         )
         tasks.append({
             "prompt": prompt, 
-            "system": "You are a precise intent classifier. Respond with exactly one word from the list."
+            "system": "You are a Strategic Intent Classifier. Respond with EXACTLY one word from the list."
         })
     
     print(f"[*] Dispatching {len(tasks)} classification tasks in parallel...")

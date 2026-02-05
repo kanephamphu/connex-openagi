@@ -253,29 +253,34 @@ class GenAIBrain:
             try:
                 task = {
                     "prompt": (
-                        "Task: Classify Input into EXACTLY one category:\n"
-                        "- CHAT: Greetings, social talk.\n"
-                        "- WEATHER: Questions about weather.\n"
-                        "- WEB_SEARCH: Information retrieval, facts, search.\n"
-                        "- RESEARCH: General knowledge, deep info.\n"
-                        "- FILE_OP: Managing files/folders.\n"
-                        "- SYSTEM_CMD: App control, system settings.\n"
-                        "- ACTION: Direct commands.\n"
-                        "- PLAN: Complex requests.\n\n"
+                        "Task: Classify User Input into EXACTLY one category.\n\n"
+                        "CATEGORIES:\n"
+                        "- CHAT: Greetings, social talk, identity, or simple conversational filler.\n"
+                        "- WEATHER: Questions about weather, temperature, or forecasts.\n"
+                        "- WEB_SEARCH: Fact questions, current news, searching for specific info online.\n"
+                        "- RESEARCH: General knowledge, deep information, or requests to 'look up' topics.\n"
+                        "- FILE_OP: Managing files/folders (create, delete, list, move, read).\n"
+                        "- SYSTEM_CMD: System-level tasks (open apps, volume, brightness, etc.).\n"
+                        "- ACTION: Direct singular commands not covered elsewhere.\n"
+                        "- PLAN: Complex, multi-step requests that require structured reasoning.\n\n"
+                        "EXAMPLES:\n"
+                        "\"Hello there\" -> CHAT\n"
+                        "\"How hot is it in Miami?\" -> WEATHER\n"
+                        "\"Who won the Oscar yesterday?\" -> WEB_SEARCH\n"
+                        "\"Explain the concept of quantum entanglement\" -> RESEARCH\n"
+                        "\"Delete the file 'old.txt'\" -> FILE_OP\n"
+                        "\"Open Spotify\" -> SYSTEM_CMD\n"
+                        "\"Research the future of SpaceX and write a report\" -> PLAN\n\n"
                         f"Input: \"{query}\"\nCategory:"
                     ),
-                    "system": "You are a precise intent classifier. Respond with EXACTLY one word from the list."
+                    "system": "You are a Strategic Intent Classifier. Respond with EXACTLY one word from the list."
                 }
                 results = await target_brain.execute_parallel([task])
                 intent_raw = results[0].upper() if results else ""
                 
-                # Check for granular matches first
                 valid_intents = ["CHAT", "WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD", "PLAN", "RESEARCH", "ACTION"]
                 for i in valid_intents:
                     if i in intent_raw:
-                        # Map synonyms for fast-track routing
-                        if i == "RESEARCH": return "WEB_SEARCH"
-                        if i == "ACTION": return "PLAN"
                         return i
             except:
                  pass # Fallback to cloud
@@ -286,12 +291,14 @@ class GenAIBrain:
         
         prompt = f"""Classify the user's intent into exactly one category:
         
-        'CHAT': Greetings, social talk, identity.
-        'RESEARCH': Fact-seeking, news, or knowledge requests.
-        'WEATHER': Questions about weather/temperature.
-        'WEB_SEARCH': Searching for specific info online.
-        'ACTION': Commands to control the system or manage files.
-        'PLAN': Complex multi-step requests.
+        'CHAT': Greetings, social talk, identity, or simple small talk.
+        'WEATHER': Questions about current weather, temperature, or forecasts.
+        'WEB_SEARCH': Searching for specific real-time information or fast facts.
+        'RESEARCH': Deep information retrieval or requests for general knowledge.
+        'FILE_OP': Interaction with the local file system (files/folders).
+        'SYSTEM_CMD': Direct system control commands (apps, volume, settings).
+        'ACTION': A single clear action request.
+        'PLAN': Complex multi-step instructions requiring planning.
         
         ### CONVERSATION CONTEXT
         Summary: {(context or {}).get('summary', 'None')}
@@ -299,7 +306,7 @@ class GenAIBrain:
 
         User Query: "{query}"
         
-        Respond ONLY with the word: CHAT, RESEARCH, WEATHER, WEB_SEARCH, ACTION, or PLAN.
+        Respond ONLY with the word: CHAT, WEATHER, WEB_SEARCH, RESEARCH, FILE_OP, SYSTEM_CMD, ACTION, or PLAN.
         """
         
         try:
@@ -322,15 +329,15 @@ class GenAIBrain:
             else:
                 intent_raw = "PLAN"
             
-            # Robust extraction
+            # Robust mapping
             mapping = {
                 "CHAT": "CHAT",
                 "WEATHER": "WEATHER",
                 "WEB_SEARCH": "WEB_SEARCH",
-                "RESEARCH": "WEB_SEARCH", # Fast-track research to search
-                "ACTION": "PLAN",         # Broad action goes to planner
+                "RESEARCH": "RESEARCH",
                 "FILE_OP": "FILE_OP",
                 "SYSTEM_CMD": "SYSTEM_CMD",
+                "ACTION": "ACTION",
                 "PLAN": "PLAN"
             }
             

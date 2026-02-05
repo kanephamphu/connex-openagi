@@ -342,10 +342,12 @@ class Orchestrator:
             if action.output_schema:
                 output = self.mapper.validate_output(output, action.output_schema, action.id)
             
-            # If skill returned explicit success=False, treat as execution error
-            if isinstance(output, dict) and output.get("success") is False:
-                error_msg = output.get("message") or output.get("error") or "Skill reports failure without message"
-                raise Exception(error_msg)
+            # If skill returned explicit success=False or has an 'error' key, treat as execution error
+            if isinstance(output, dict):
+                is_failed = output.get("success") is False or "error" in output
+                if is_failed:
+                    error_msg = output.get("error") or output.get("message") or "Skill reports failure without specific message"
+                    raise Exception(error_msg)
             
             duration = time.time() - start_time
             

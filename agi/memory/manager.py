@@ -20,7 +20,7 @@ class MemoryManager:
         # Conversation Memory (Multi-turn)
         self.conversation_history: List[Dict[str, str]] = []
         self.conversation_summary: str = ""
-        self.max_history = 10 
+        self.max_history = getattr(config, 'max_history', 10)
         
         # Emotional State
         self.emotional_state: Dict[str, str] = {
