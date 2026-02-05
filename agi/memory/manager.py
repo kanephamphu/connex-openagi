@@ -95,7 +95,7 @@ class MemoryManager:
         """
         return {
             "summary": self.conversation_summary or "New conversation.",
-            "recent_history": self.conversation_history
+            "recent_history": self.conversation_history[:5]
         }
             
     async def recall(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
