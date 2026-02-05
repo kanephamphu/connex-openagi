@@ -74,6 +74,7 @@ class AGIConfig:
     data_dir: str = "data"
     perception_storage_path: str = "installed_perception"
     reflex_storage_path: str = "installed_reflex"
+    use_external_subbrain: bool = False # Flag to toggle external subbrain usage
     
     @classmethod
     def from_env(cls) -> "AGIConfig":
@@ -111,9 +112,10 @@ class AGIConfig:
             reflex_storage_path=os.getenv("AGI_REFLEX_STORAGE", "installed_reflex"),
             sub_brain_count=int(os.getenv("AGI_SUB_BRAIN_COUNT", "2")),
             sub_brain_url=os.getenv("AGI_SUB_BRAIN_URL", "http://localhost:11434/v1"),
-            sub_brain_model=os.getenv("AGI_SUB_BRAIN_MODEL", "tinyllama:latest"),
-            sub_brain_init_command=os.getenv("AGI_SUB_BRAIN_INIT", "ollama serve"),
-            sub_brain_health_endpoint=os.getenv("AGI_SUB_BRAIN_HEALTH", "http://localhost:11434/api/tags"),
+            sub_brain_model=os.getenv("AGI_SUB_BRAIN_MODEL", "HuggingFaceTB/SmolLM2-1.7B-Instruct"),
+            sub_brain_init_command=os.getenv("AGI_SUB_BRAIN_INIT", "./run_smol_brain.sh"),
+            sub_brain_health_endpoint=os.getenv("AGI_SUB_BRAIN_HEALTH", "http://localhost:11434/api/health"),
+            use_external_subbrain=os.getenv("AGI_USE_EXTERNAL_SUBBRAIN", "true").lower() == "true",
         )
         
         # Load overlays from Database

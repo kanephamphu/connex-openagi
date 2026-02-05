@@ -15,39 +15,61 @@ class EmotionDetectionSkill(Skill):
             description="Analyzes text to detect human and AGI emotional states.",
             version="1.0.0",
             category="social",
-            usage="detect_emotion(text='user input')"
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Analyzing deep emotional sentiment [happy, sad, angry, neutral, curious, frustrated, anxious, grateful, bored, excited]"}
+                },
+                "required": ["text"]
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "human_emotion": {"type": "string", "description": "Detected human sentiment"},
+                    "agi_emotion": {"type": "string", "description": "Introspected AGI state [helpful, concerned, analytical, cautious, enthusiastic, apologetic, determined, playful]"},
+                    "success": {"type": "boolean"}
+                }
+            }
         )
 
     def __init__(self, config):
         super().__init__(config)
-        self.sub_brain = getattr(config, 'sub_brain_manager', None)
 
     async def execute(self, text: str, **kwargs) -> Dict[str, Any]:
-        if not self.sub_brain:
+        # Dynamically retrieve sub_brain from agi_config to handle async initialization
+        sub_brain = getattr(self.agi_config, 'sub_brain_manager', None)
+        if not sub_brain:
             return {"success": False, "error": "Sub-brain manager not configured."}
-
-        # Prepare parallel tasks for sub-brains
+            
         tasks = [
             {
-                "system": "You are an emotion detection specialist. Analyze the HUMAN's query and respond with one word: [happy, sad, angry, neutral, curious, frustrated].",
-                "prompt": f"Query: \"{text}\""
+                "system": (
+                    "You are an Expert Empathy Analyst. Analyze the HUMAN's query deeply.\n"
+                    "Determine the primary emotional state based on tone, keywords, and punctuation.\n"
+                    "Categories: [happy, sad, angry, neutral, curious, frustrated, anxious, grateful, bored, excited].\n"
+                    "Respond with EXACTLY one word from the list."
+                ),
+                "prompt": f"User Query: \"{text}\"\nDetected Emotion:"
             },
             {
-                "system": "You are an introspection specialist. Analyze how an AGI should feel about this request and respond with one word: [helpful, concerned, analytical, cautious, enthusiastic].",
-                "prompt": f"Request: \"{text}\""
+                "system": (
+                    "You are a Self-Aware Artificial Intelligence. Introspect and determine how you should feel\n"
+                    "internally when handling this specific request to be most effective and empathetic.\n"
+                    "States: [helpful, concerned, analytical, cautious, enthusiastic, apologetic, determined, playful].\n"
+                    "Respond with EXACTLY one word from the list."
+                ),
+                "prompt": f"Goal/Request: \"{text}\"\nInternal State:"
             }
         ]
 
         try:
-            results = await self.sub_brain.execute_parallel(tasks)
+            results = await sub_brain.execute_parallel(tasks)
             if len(results) >= 2:
-                human_emotion = results[0].lower()
-                agi_emotion = results[1].lower()
+                human_emotion = results[0].strip().lower().strip("[]().")
+                agi_emotion = results[1].strip().lower().strip("[]().")
                 
-                # Update Memory (this assumes we have access to context or it's handled globally)
-                # In our architecture, the Skill should ideally return values and the Orchestrator/Memory should handle updates,
-                # but for this specific "infrastructure" request, we'll try to find the memory manager if attached to config.
-                memory = getattr(self.config, 'memory_manager', None)
+                # Update Memory
+                memory = getattr(self.agi_config, 'memory_manager', None)
                 if memory:
                     memory.update_emotional_state(human_emotion, agi_emotion)
 

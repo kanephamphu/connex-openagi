@@ -237,41 +237,61 @@ class GenAIBrain:
 
     async def classify_intent_fast(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
         """
-        Classify intent using a local sub-brain if available, otherwise fallback to cloud.
+        Wrapper for unified intent classification.
         """
-        if sub_brain_manager:
-            prompt = f"Classify the user's intent as either 'CHAT' or 'ACTION'. Query: \"{query}\". Respond ONLY with the word 'CHAT' or 'ACTION'."
+        return await self.classify_intent(query, context, sub_brain_manager)
+
+    async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
+        """
+        Classify the user intent into specific categories using Local or Cloud models.
+        Supports CHAT, WEATHER, WEB_SEARCH, FILE_OP, SYSTEM_CMD, RESEARCH, ACTION, PLAN.
+        """
+        # 1. Routing Decision: Local Sub-Brain vs External
+        target_brain = sub_brain_manager if not self.config.use_external_subbrain else None
+        
+        if target_brain:
             try:
-                results = await sub_brain_manager.execute_parallel([{"prompt": prompt}])
-                intent = results[0].upper() if results else "ACTION"
-                return "CHAT" if "CHAT" in intent else "ACTION"
+                task = {
+                    "prompt": (
+                        "Task: Classify Input into EXACTLY one category:\n"
+                        "- CHAT: Greetings, social talk.\n"
+                        "- WEATHER: Questions about weather.\n"
+                        "- WEB_SEARCH: Information retrieval, facts, search.\n"
+                        "- RESEARCH: General knowledge, deep info.\n"
+                        "- FILE_OP: Managing files/folders.\n"
+                        "- SYSTEM_CMD: App control, system settings.\n"
+                        "- ACTION: Direct commands.\n"
+                        "- PLAN: Complex requests.\n\n"
+                        f"Input: \"{query}\"\nCategory:"
+                    ),
+                    "system": "You are a precise intent classifier. Respond with EXACTLY one word from the list."
+                }
+                results = await target_brain.execute_parallel([task])
+                intent_raw = results[0].upper() if results else ""
+                
+                # Check for granular matches first
+                valid_intents = ["CHAT", "WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD", "PLAN", "RESEARCH", "ACTION"]
+                for i in valid_intents:
+                    if i in intent_raw:
+                        # Map synonyms for fast-track routing
+                        if i == "RESEARCH": return "WEB_SEARCH"
+                        if i == "ACTION": return "PLAN"
+                        return i
             except:
                  pass # Fallback to cloud
         
-        return await self.classify_intent(query, context)
-
-    async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Classify the user intent into CHAT or ACTION.
-        
-        CHAT: Simple greetings, general questions, or conversational filler.
-        ACTION: Requests that imply performing a task, searching, or using tools.
-        """
+        # 2. Cloud Fallback
         provider, model = self.select_model(TaskType.FAST)
         client = self.get_client(provider)
         
-        prompt = f"""Classify the user's intent as either 'CHAT' or 'ACTION'.
+        prompt = f"""Classify the user's intent into exactly one category:
         
-        'CHAT':
-        - Simple greetings: "hello", "hi", "hey".
-        - Personal questions: "who are you?", "how are you?".
-        - Conversational filler: "okay", "thanks", "wow".
-        - General knowledge that DOES NOT require a search: "what is the capital of France?".
-        
-        'ACTION':
-        - Requests to perform tasks: "search the web for...", "create a file...", "open Calculator".
-        - Complex analysis: "analyze this data", "summarize my emails".
-        - Specific tool usage: "take a screenshot", "write some code to...".
+        'CHAT': Greetings, social talk, identity.
+        'RESEARCH': Fact-seeking, news, or knowledge requests.
+        'WEATHER': Questions about weather/temperature.
+        'WEB_SEARCH': Searching for specific info online.
+        'ACTION': Commands to control the system or manage files.
+        'PLAN': Complex multi-step requests.
         
         ### CONVERSATION CONTEXT
         Summary: {(context or {}).get('summary', 'None')}
@@ -279,7 +299,7 @@ class GenAIBrain:
 
         User Query: "{query}"
         
-        Respond ONLY with the word 'CHAT' or 'ACTION'.
+        Respond ONLY with the word: CHAT, RESEARCH, WEATHER, WEB_SEARCH, ACTION, or PLAN.
         """
         
         try:
@@ -290,7 +310,7 @@ class GenAIBrain:
                     temperature=0,
                     max_tokens=10
                 )
-                intent = response.choices[0].message.content.strip().upper()
+                intent_raw = response.choices[0].message.content.strip().upper()
             elif provider == "anthropic":
                 response = await client.messages.create(
                     model=model,
@@ -298,15 +318,31 @@ class GenAIBrain:
                     temperature=0,
                     max_tokens=10
                 )
-                intent = response.content[0].text.strip().upper()
+                intent_raw = response.content[0].text.strip().upper()
             else:
-                # Fallback for other providers
-                intent = "ACTION"
-                
-            return "CHAT" if "CHAT" in intent else "ACTION"
+                intent_raw = "PLAN"
+            
+            # Robust extraction
+            mapping = {
+                "CHAT": "CHAT",
+                "WEATHER": "WEATHER",
+                "WEB_SEARCH": "WEB_SEARCH",
+                "RESEARCH": "WEB_SEARCH", # Fast-track research to search
+                "ACTION": "PLAN",         # Broad action goes to planner
+                "FILE_OP": "FILE_OP",
+                "SYSTEM_CMD": "SYSTEM_CMD",
+                "PLAN": "PLAN"
+            }
+            
+            for key, val in mapping.items():
+                if key in intent_raw:
+                    return val
+            
+            return "CHAT" if "CHAT" in intent_raw else "PLAN"
+
         except Exception as e:
             print(f"[Brain] Intent classification failed: {e}")
-            return "ACTION"  # Default to ACTION for safety
+            return "PLAN"
 
     def _get_default_provider_and_model(self) -> tuple[str, str]:
         """Recursive fallback for defaults."""

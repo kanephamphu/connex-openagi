@@ -257,7 +257,14 @@ class AGI:
                 "metadata": {"intent": "CHAT"}
             }
 
-        # Tier 1: Plan the actions (ACTION intent)
+        # --- Fast Intent Handling (Skip Planning for simple known tasks) ---
+        fast_intents = ["WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD"]
+        if intent in fast_intents:
+            fast_result = await self._handle_fast_intent(intent, goal, speak_output)
+            if fast_result:
+                return fast_result
+
+        # Tier 1: Plan the actions (ACTION or PLAN intent)
         # Get relevant, enabled skills
         skills = await self.skill_registry.get_relevant_skills(goal)
         plan = await self.planner.create_plan(goal, merged_context, skills)
@@ -413,6 +420,15 @@ class AGI:
                 })
                 return
 
+            # --- Fast Intent Handling (Skip Planning for simple known tasks) ---
+            fast_intents = ["WEATHER", "WEB_SEARCH", "FILE_OP", "SYSTEM_CMD"]
+            if intent in fast_intents:
+                yield {"phase": "planning", "type": "fast_path_triggered", "intent": intent}
+                fast_result = await self._handle_fast_intent(intent, goal, self.config.speak_output)
+                if fast_result:
+                    yield {"phase": "execution", "type": "fast_result", "data": fast_result}
+                    return
+
             # Tier 1: Plan the actions (ACTION intent)
             if self.config.verbose:
                 print("[AGI] Creating plan...")
@@ -491,6 +507,84 @@ class AGI:
             full_trace.append(err_evt)
             yield err_evt
             
+    async def _handle_fast_intent(self, intent: str, goal: str, speak_output: bool) -> Optional[Dict[str, Any]]:
+        """
+        Handle simple intents using direct skill execution to save resources.
+        """
+        skill_map = {
+            "WEATHER": ("weather", "Extract the location (city) from the goal. Respond with ONLY the JSON object like {\"location\": \"City\"}."),
+            "WEB_SEARCH": ("web_search", "Extract the search query. Respond with ONLY the JSON object like {\"query\": \"Search text\"}."),
+            "SYSTEM_CMD": ("system", "Extract the application name. Respond with ONLY the JSON object like {\"app\": \"Name\"}."),
+            "FILE_OP": ("file_manager", "Parse the file action. Respond with ONLY the JSON like {\"action\": \"list\", \"path\": \".\"} or {\"action\": \"delete\", \"path\": \"file\"}.")
+        }
+
+        if intent not in skill_map:
+            return None
+
+        skill_name, extraction_prompt = skill_map[intent]
+        
+        if self.config.verbose:
+            print(f"[AGI] Fast-tracking {intent} using skill: {skill_name}")
+
+        # 1. Parameter Extraction via Sub-Brain
+        try:
+            task = {
+                "prompt": f"Goal: \"{goal}\"\n{extraction_prompt}",
+                "system": "You are a parameter extractor. Output only valid JSON."
+            }
+            extraction_results = await self.sub_brain.execute_parallel([task])
+            params_raw = extraction_results[0] if extraction_results else "{}"
+            # Basic JSON cleanup
+            if "```" in params_raw:
+                params_raw = params_raw.split("```")[1].strip()
+                if params_raw.startswith("json"):
+                    params_raw = params_raw[4:].strip()
+            
+            import json
+            params = json.loads(params_raw)
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[AGI] Fast extraction failed: {e}. Falling back to Planner.")
+            return None
+
+        # 2. Execute Skill Directly
+        try:
+            skill = self.skill_registry.get_skill(skill_name)
+            if not skill:
+                return None
+                
+            result_data = await skill.execute(**params)
+            
+            # 3. Handle Speak and Memory
+            reply = "I've handled that for you."
+            if intent == "WEATHER" and result_data.get("success"):
+                reply = f"The weather in {result_data.get('location')} is {result_data.get('temperature')}°C and {result_data.get('condition')}."
+            elif intent == "WEB_SEARCH":
+                # For search, we might need a mini-summary? 
+                # For fast-track, let's just use the results.
+                reply = f"I found some information about that: {str(result_data.get('results', []))[:200]}..."
+            elif result_data.get("message"):
+                reply = result_data["message"]
+
+            if speak_output and reply:
+                speak_skill = self.skill_registry.get_skill("speak")
+                await speak_skill.execute(text=reply)
+
+            self.memory.add_to_short_term(goal, reply)
+            asyncio.create_task(self.memory.update_conversation_summary())
+
+            return {
+                "success": result_data.get("success", True),
+                "result": result_data,
+                "plan": {"goal": goal, "fast_intent": intent},
+                "execution_trace": [{"skill": skill_name, "params": params, "result": result_data}],
+                "metadata": {"intent": intent, "fast_path": True}
+            }
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[AGI] Fast execution failed: {e}. Falling back to Planner.")
+            return None
+
         finally:
             # Save history
             try:

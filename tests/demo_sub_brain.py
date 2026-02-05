@@ -5,33 +5,66 @@ from agi.config import AGIConfig
 from agi.sub_brain import SubBrainManager
 
 async def run_demo():
-    print("=== Sub-Brain Sequential Demo ===")
+    print("=== Sub-Brain Intent Classification Demo ===")
     config = AGIConfig.from_env()
     
-    # Use a single worker for sequential testing
-    config.sub_brain_count = 1
+    # Use multiple workers if available to test parallel execution
+    config.sub_brain_count = 2
     
     manager = SubBrainManager(config)
     
     print(f"[*] Initializing Sub-Brain Manager...")
     await manager.initialize()
     
-    # We only test one action now
-    task = {"prompt": "Say 'SmolLM is ready and responsive'", "system": "You are a helpful assistant."}
+    # Test cases for Intent Classification
+    queries = [
+        "Hello, how are you today?",
+        "What's the weather like in New York?",
+        "Open the browser and go to google.com",
+        "Tell me a joke",
+        "Create a file named hello.txt",
+        "Search for Michael Jackson music on YouTube",
+        "Who founded Microsoft?"
+    ]
     
-    print(f"[*] Running sequential task: {task['prompt']}")
+    tasks = []
+    for query in queries:
+        prompt = (
+            "Task: Classify Input into EXACTLY one category:\n"
+            "- CHAT: Greetings, social talk, identity.\n"
+            "- WEATHER: Questions about weather/temperature.\n"
+            "- WEB_SEARCH: Fact questions, news, searching info.\n"
+            "- FILE_OP: Creating, deleting, or managing files/folders.\n"
+            "- SYSTEM_CMD: Opening apps, brightness, volume, etc.\n"
+            "- PLAN: Complex multi-step requests.\n\n"
+            "Example 1: \"Hello\" -> CHAT\n"
+            "Example 2: \"How is the weather in Paris?\" -> WEATHER\n"
+            "Example 3: \"Who is the president?\" -> WEB_SEARCH\n"
+            "Example 4: \"Make a new file called 'test.py'\" -> FILE_OP\n"
+            "Example 5: \"Open Chrome\" -> SYSTEM_CMD\n"
+            "Example 6: \"Analyze this folder and write a report\" -> PLAN\n"
+            f"Input: \"{query}\"\nCategory:"
+        )
+        tasks.append({
+            "prompt": prompt, 
+            "system": "You are a precise intent classifier. Respond with exactly one word from the list."
+        })
+    
+    print(f"[*] Dispatching {len(tasks)} classification tasks in parallel...")
     
     start_time = time.time()
-    # We can still use executive_parallel with a single task, or we could add a run_single method.
-    # For now, execute_parallel with 1 task is fine for the manager infrastructure.
-    results = await manager.execute_parallel([task])
+    results = await manager.execute_parallel(tasks)
     end_time = time.time()
     
-    print("\n=== Result ===")
-    print(f"Response: {results[0]}")
+    print("\n=== Intent Classification Results ===")
+    for query, intent in zip(queries, results):
+        print(f"Query: \"{query[:40]}{'...' if len(query) > 40 else ''}\"")
+        print(f"Detected Intent: {intent}")
+        print("-" * 30)
     
-    print(f"\n[*] Execution time: {end_time - start_time:.2f}s")
-    print("===============================")
+    print(f"\n[*] Total Execution time: {end_time - start_time:.2f}s")
+    print(f"[*] Average time per query: {(end_time - start_time) / len(queries):.2f}s")
+    print("===========================================")
 
 if __name__ == "__main__":
     try:

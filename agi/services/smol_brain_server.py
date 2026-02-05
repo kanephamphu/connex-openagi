@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Generator
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TextIteratorStreamer
+from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer
 from threading import Thread
 
 # 1. Initialize FastAPI
@@ -39,8 +39,16 @@ class ChatCompletionResponse(BaseModel):
     choices: List[ChatCompletionResponseChoice]
 
 # 3. Model Configuration & Loading
-MODEL_ID = "HuggingFaceTB/SmolLM-135M-Instruct"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL_ID = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+
+# Detect device: CUDA -> MPS -> CPU
+if torch.cuda.is_available():
+    DEVICE = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    DEVICE = "mps"
+else:
+    DEVICE = "cpu"
+
 CACHE_DIR = os.path.join(os.getcwd(), "models", "smollm")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -49,20 +57,27 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 print(f"[*] Loading model {MODEL_ID} on {DEVICE}...")
 print(f"[*] Local cache: {CACHE_DIR}")
 
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True
-)
+# Optional quantization (CPU/MPS usually don't support BitsAndBytes 4-bit)
+quantization_config = None
+if DEVICE == "cuda":
+    try:
+        from transformers import BitsAndBytesConfig
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True
+        )
+    except ImportError:
+        print("[!] BitsAndBytes not found, skipping quantization.")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=CACHE_DIR)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID, 
-    quantization_config=quantization_config if DEVICE == "cuda" else None,
+    quantization_config=quantization_config,
     device_map="auto" if DEVICE == "cuda" else None,
     cache_dir=CACHE_DIR
-)
+).to(DEVICE)
 
 @app.get("/api/tags")
 @app.get("/api/health")
