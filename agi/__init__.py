@@ -490,13 +490,13 @@ class AGI:
                         await speak_skill.execute(text=f"I'm sorry, I encountered an error: {error_msg}")
                 except:
                     pass
-        finally:
-            # Save history
-            try:
-                self.history.add_trace(goal, full_trace)
-            except Exception as h_err:
-                if self.config.verbose:
-                    print(f"[AGI] Failed to save history: {h_err}")
+        # finally:
+            # # Save history
+            # try:
+            #     self.history.add_trace(goal, full_trace)
+            # except Exception as h_err:
+            #     if self.config.verbose:
+            #         print(f"[AGI] Failed to save history: {h_err}")
             
     async def _handle_fast_intent(self, intent: str, goal: str, speak_output: bool) -> Optional[Dict[str, Any]]:
         """
