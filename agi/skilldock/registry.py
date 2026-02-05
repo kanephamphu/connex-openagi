@@ -310,16 +310,22 @@ class SkillRegistry:
             if score > 0 or not relevant_skills:
                 final_scored_skills.append((skill, score))
         
-        # 3. Diverse Selection (Highest score per category)
-        best_per_group = {}
-        for skill, score in final_scored_skills:
-            cat = skill.metadata.category
-            if cat not in best_per_group or score > best_per_group[cat][1]:
-                best_per_group[cat] = (skill, score)
-        
-        # Extract skills and sort by score
-        diverse_scored = sorted(best_per_group.values(), key=lambda x: x[1], reverse=True)
-        selected = [s for s, _ in diverse_scored[:limit]]
+        # 3. Selection & Diversity
+        # For general queries, we want one per category. 
+        # For targeted recovery (when category is provided), we want all similar tools.
+        if category:
+            selected_scored = sorted(final_scored_skills, key=lambda x: x[1], reverse=True)
+            selected = [s for s, _ in selected_scored[:limit]]
+        else:
+            best_per_group = {}
+            for skill, score in final_scored_skills:
+                cat = skill.metadata.category
+                if cat not in best_per_group or score > best_per_group[cat][1]:
+                    best_per_group[cat] = (skill, score)
+            
+            # Extract skills and sort by score
+            diverse_scored = sorted(best_per_group.values(), key=lambda x: x[1], reverse=True)
+            selected = [s for s, _ in diverse_scored[:limit]]
                 
         if self.config.verbose:
             names = [s.metadata.name for s in selected]

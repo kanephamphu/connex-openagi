@@ -1,5 +1,9 @@
 
-import pyperclip
+try:
+    import pyperclip
+    HAS_PYPERCLIP = True
+except ImportError:
+    HAS_PYPERCLIP = False
 import asyncio
 from typing import Any, Dict, Optional
 from agi.perception.base import PerceptionModule, PerceptionMetadata
@@ -32,6 +36,8 @@ class ClipboardPerception(PerceptionModule):
         """
         Active check: Returns current content.
         """
+        if not HAS_PYPERCLIP:
+            return {"error": "Clipboard library (pyperclip) not installed or supported."}
         try:
             content = pyperclip.paste()
             return {"content": content}
@@ -46,6 +52,8 @@ class ClipboardPerception(PerceptionModule):
     # We will implement a 'check_for_changes' method that returns an event or None.
     
     async def check_change(self) -> Optional[Dict[str, Any]]:
+        if not HAS_PYPERCLIP:
+            return None
         try:
             content = pyperclip.paste()
             if content != self.last_content:
