@@ -1,9 +1,10 @@
-
 import os
 import importlib.util
+import sys
 from typing import Dict, List, Optional, Any
 from agi.config import AGIConfig
 from agi.perception.base import PerceptionModule
+from agi.utils.registry_client import RegistryClient
 
 class PerceptionLayer:
     """
@@ -17,13 +18,13 @@ class PerceptionLayer:
         # Path to where dynamic modules are stored/installed
         self.modules_path = self.config.perception_storage_path
         os.makedirs(self.modules_path, exist_ok=True)
-        
         # Grounding callback for world layer anchoring
         self.grounding_callback: Optional[callable] = None
 
         # Initialize Database
         from agi.utils.database import DatabaseManager
         self.db = DatabaseManager()
+        self.registry_client = RegistryClient(self.config)
         
     async def initialize(self, memory_manager=None, skill_registry=None, identity_manager=None):
         """Initialize all registered perception modules with robustness."""
@@ -80,6 +81,9 @@ class PerceptionLayer:
                 import traceback
                 if self.config.verbose:
                     traceback.print_exc()
+
+        # Load Local Modules from storage path
+        self.load_local_modules()
 
         # Generate Embeddings for all successfully loaded modules
         await self.ensure_embeddings()
@@ -266,9 +270,82 @@ class PerceptionLayer:
                     
         return result
 
-    async def install_module(self, source_path_or_url: str):
+    async def install_module(self, scoped_name: str) -> bool:
         """
-        Install a perception module from a registry or path.
-        (Placeholder for dynamic loading logic similar to SkillRegistry)
+        Install a perception module from the registry.
         """
-        pass
+        if self.config.verbose:
+            print(f"[Perception] Attempting to install {scoped_name}...")
+            
+        install_dir = await self.registry_client.download_and_save(
+            "perception", scoped_name, self.modules_path
+        )
+        
+        if not install_dir:
+            return False
+            
+        return self._load_dynamic_module(install_dir)
+
+    def _load_dynamic_module(self, directory: str) -> bool:
+        """
+        Dynamically load a perception module from a directory.
+        """
+        import importlib.util
+        import sys
+        import os
+        
+        try:
+            # Main file from connex.json or default to system.py
+            main_file = "system.py"
+            manifest_path = os.path.join(directory, "connex.json")
+            if os.path.exists(manifest_path):
+                import json
+                with open(manifest_path, "r") as f:
+                    manifest = json.load(f)
+                    main_file = manifest.get("main", "system.py")
+            
+            agent_path = os.path.join(directory, main_file)
+            if not os.path.exists(agent_path):
+                return False
+                 
+            module_name = "installed_perception." + os.path.basename(directory)
+            
+            spec = importlib.util.spec_from_file_location(module_name, agent_path)
+            if not spec or not spec.loader:
+                return False
+                
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            
+            loaded_count = 0
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, type) and issubclass(attr, PerceptionModule) and attr is not PerceptionModule:
+                    try:
+                        # Instantiate - perception modules usually take config
+                        instance = attr(config=self.config)
+                        self.register_module(instance)
+                        loaded_count += 1
+                    except Exception as e:
+                         print(f"[Perception] Failed to instantiate {attr_name}: {e}")
+            
+            return loaded_count > 0
+            
+        except Exception as e:
+            print(f"[Perception] Dynamic load failed for {directory}: {e}")
+            return False
+
+    def load_local_modules(self):
+        """Load all perception modules from storage."""
+        if not os.path.exists(self.modules_path):
+            return
+            
+        for entry in os.listdir(self.modules_path):
+            full_path = os.path.join(self.modules_path, entry)
+            if os.path.isdir(full_path):
+                self._load_dynamic_module(full_path)
+
+    async def search_registry(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search the registry for perception modules."""
+        return await self.registry_client.search("perception", query, limit)

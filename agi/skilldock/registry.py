@@ -4,6 +4,7 @@ Skill registry for discovering and managing skills.
 
 from typing import Dict, List, Optional, Any
 from agi.skilldock.base import Skill, SkillMetadata
+from agi.utils.registry_client import RegistryClient
 
 
 class SkillRegistry:
@@ -28,6 +29,7 @@ class SkillRegistry:
         import os
         db_path = os.path.join(self.config.skills_storage_path, "skills.db")
         self.store = SkillStore(db_path)
+        self.registry_client = RegistryClient(self.config)
         
         self._load_builtin_skills()
         self.load_local_skills()
@@ -369,111 +371,27 @@ class SkillRegistry:
                 # Ensure metadata is up to date even if embedding exists
                 self.store.upsert_skill(name, skill.metadata.to_dict())
     
-    def search_registry(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def search_registry(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Search for skills in the Connex Registry.
-        
-        Args:
-            query: Search query
-            limit: Max results
-            
-        Returns:
-            List of skill results
         """
-        import httpx
-        try:
-            url = f"{self.config.registry_url}/skills/search"
-            response = httpx.get(url, params={"q": query, "page_size": limit}, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("results", [])
-            return []
-        except Exception as e:
-            if self.config.verbose:
-                print(f"[SkillRegistry] Search failed: {e}")
-            return []
+        return await self.registry_client.search("skill", query, limit)
 
     async def install_skill(self, scoped_name: str) -> bool:
         """
         Install a skill from the registry.
-        
-        Downloads the skill code and registers it dynamically.
-        
-        Args:
-            scoped_name: Name in format @user/skill
-            
-        Returns:
-            True if successful
         """
-        import httpx
-        import os
-        import json
-        
         if self.config.verbose:
             print(f"[SkillRegistry] Attempting to install {scoped_name}...")
             
-        try:
-            # 1. Fetch skill data
-            url = f"{self.config.registry_url}/skills/{scoped_name}"
-            # Support unauthenticated pulls for public skills, add token if present and needed
-            headers = {}
-            if self.config.connex_auth_token:
-                headers["Authorization"] = f"Bearer {self.config.connex_auth_token}"
-                
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers, timeout=20)
-            
-            if response.status_code != 200:
-                print(f"[SkillRegistry] Skill {scoped_name} not found in registry (Status: {response.status_code})")
-                return False
-                
-            skill_data = response.json()
-            
-            # 2. Prepare local storage
-            # Sanitization: replace @ with _at_ and / with _ to make safe path
-            safe_name = scoped_name.replace("@", "").replace("/", "_")
-            install_dir = os.path.join(self.config.skills_storage_path, safe_name)
-            os.makedirs(install_dir, exist_ok=True)
-            
-            # 3. Write files
-            # Main code
-            code = skill_data.get("implementation_code", "")
-            if not code:
-                print(f"[SkillRegistry] No implementation code found for {scoped_name}")
-                return False
-                
-            with open(os.path.join(install_dir, "agent.py"), "w", encoding="utf-8") as f:
-                f.write(code)
-                
-            # Manifest
-            with open(os.path.join(install_dir, "connex.json"), "w", encoding="utf-8") as f:
-                json.dump(skill_data, f, indent=2)
-                
-            # Extra files
-            files = skill_data.get("files", {})
-            for fname, content in files.items():
-                # Basic directory traversal protection
-                if ".." in fname or fname.startswith("/"):
-                    continue
-                file_path = os.path.join(install_dir, fname)
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-            
-            # 4. Load the skill
-            if self.config.verbose:
-                print(f"[SkillRegistry] Downloaded to {install_dir}. Loading...")
-                
-            success = self._load_dynamic_skill(install_dir)
-            if success:
-                 print(f"[SkillRegistry] Successfully installed and loaded {scoped_name}")
-            return success
-            
-        except Exception as e:
-            print(f"[SkillRegistry] Installation failed: {e}")
-            import traceback
-            traceback.print_exc()
+        install_dir = await self.registry_client.download_and_save(
+            "skill", scoped_name, self.config.skills_storage_path
+        )
+        
+        if not install_dir:
             return False
+            
+        return self._load_dynamic_skill(install_dir)
 
     def _load_dynamic_skill(self, directory: str) -> bool:
         """

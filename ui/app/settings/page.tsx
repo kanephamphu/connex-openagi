@@ -85,6 +85,7 @@ export default function SettingsPage() {
     const apiKeys = ["openai_api_key", "anthropic_api_key", "deepseek_api_key", "groq_api_key", "google_api_key"];
     const modelSettings = ["default_planner", "default_executor", "planner_model", "executor_model", "temperature", "max_tokens"];
     const runtimeSettings = ["verbose", "max_retries", "action_timeout", "self_correction_enabled"];
+    const registrySettings = ["registry_url", "connex_auth_token", "allow_skill_publishing"];
 
     const renderField = (key: string) => {
         const value = config[key];
@@ -177,6 +178,16 @@ export default function SettingsPage() {
                         </h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {runtimeSettings.map(key => renderField(key))}
+                        </div>
+                    </section>
+
+                    {/* Registry Settings Section */}
+                    <section className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-xl font-semibold mb-4 text-pink-400 border-b border-gray-700 pb-2">
+                            Connex Registry
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {registrySettings.map(key => renderField(key))}
                         </div>
                     </section>
 

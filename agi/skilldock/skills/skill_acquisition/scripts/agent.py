@@ -5,6 +5,7 @@ Skill Acquisition: A meta-skill that allows the AGI to learn new capabilities.
 from typing import Dict, Any
 from agi.skilldock.base import Skill, SkillMetadata, SkillTestCase
 from agi.brain import GenAIBrain, TaskType
+from agi.utils.registry_client import RegistryClient
 
 class SkillAcquisitionSkill(Skill):
     """
@@ -14,6 +15,7 @@ class SkillAcquisitionSkill(Skill):
     def __init__(self, config):
         self.config = config
         self.brain = GenAIBrain(config)
+        self.registry_client = RegistryClient(config)
     
     @property
     def metadata(self) -> SkillMetadata:
@@ -40,10 +42,47 @@ class SkillAcquisitionSkill(Skill):
     async def execute(self, requirement: str) -> Dict[str, Any]:
         """
         Generates code for a new skill and calls skill_creator.
-        """
         await self.validate_inputs(requirement=requirement)
         
-        # 1. Generate skill code using the Brain
+        # 1. First, search the Connex Registry for an existing skill
+        if self.config.verbose:
+            print(f"[SkillAcquisition] Searching registry for: {requirement}")
+            
+        search_results = await self.registry_client.search("skill", requirement, limit=3)
+        
+        if search_results:
+            # Simple heuristic: if we find something that looks like 
+            # it matches, we try to install it.
+            # In a more advanced version, we could use the LLM to verify 
+            # if the registry result matches the requirement.
+            best_match = search_results[0]
+            scoped_name = best_match.get("scopedName") or best_match.get("name")
+            
+            if scoped_name:
+                if self.config.verbose:
+                    print(f"[SkillAcquisition] Found potential match in registry: {scoped_name}. Attempting install...")
+                
+                # We need access to the SkillRegistry to install it. 
+                # Since skills don't have it, we use the server's pattern: RegistryClient + dynamic load.
+                install_dir = await self.registry_client.download_and_save(
+                    "skill", scoped_name, self.config.skills_storage_path
+                )
+                
+                if install_dir:
+                    # We can't easily trigger the main SkillRegistry to load it from here 
+                    # without more wiring, but the Orchestrator will see it next time 
+                    # it asks the registry for skills if we reload.
+                    # For now, let's just return success if it's saved.
+                    return {
+                        "success": True,
+                        "skill_name": scoped_name,
+                        "message": f"Successfully found and installed '{scoped_name}' from the Connex Registry."
+                    }
+
+        # 2. Fallback: Generate skill code using the Brain
+        if self.config.verbose:
+            print(f"[SkillAcquisition] No suitable skill found in registry. Generating new implementation...")
+        
         prompt = f"""
         Generate a new Python skill for the Connex AGI ecosystem.
         Requirement: {requirement}

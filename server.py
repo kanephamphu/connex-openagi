@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from typing import Dict, Any, Optional
 import json
 import asyncio
+from pathlib import Path
 
 from agi import AGI
 from agi.config import AGIConfig
@@ -380,6 +381,91 @@ async def get_history_trace(entry_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Trace not found")
     return item
+@app.get("/api/registry/search")
+async def search_registry(q: str, type: str = "skill", limit: int = 10):
+    """Search for components in the registry."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    try:
+        if type == "skill":
+            results = await agi_instance.skill_registry.search_registry(q, limit)
+        elif type == "perception":
+            results = await agi_instance.perception.search_registry(q, limit)
+        elif type == "reflex":
+            results = await agi_instance.reflex.search_registry(q, limit)
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid component type: {type}")
+            
+        return {"results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class InstallRequest(BaseModel):
+    name: str
+    type: str
+
+@app.post("/api/registry/install")
+async def install_component(request: InstallRequest):
+    """Install a component from the registry."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    try:
+        success = False
+        if request.type == "skill":
+            success = await agi_instance.skill_registry.install_skill(request.name)
+        elif request.type == "perception":
+            success = await agi_instance.perception.install_module(request.name)
+        elif request.type == "reflex":
+            success = await agi_instance.reflex.install_reflex(request.name)
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid component type: {request.type}")
+            
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Component {request.name} not found or failed to install")
+            
+        return {"success": True, "message": f"Successfully installed {request.name}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PublishRequest(BaseModel):
+    name: str
+    type: str # skill, perception, reflex
+    scoped_name: str
+    private: bool = False
+
+@app.post("/api/registry/publish")
+async def publish_component(request: PublishRequest):
+    """Publish a local component to the registry."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    from agi.services.publisher import ConnexPublisher
+    publisher = ConnexPublisher(agi_instance.config)
+    
+    try:
+        component = None
+        if request.type == "skill":
+            component = agi_instance.skill_registry.get_skill(request.name)
+        elif request.type == "perception":
+            component = agi_instance.perception.get_module(request.name)
+        elif request.type == "reflex":
+            # For reflexes, we need to find it in the list
+            component = agi_instance.reflex._reflexes.get(request.name)
+        
+        if not component:
+             raise HTTPException(status_code=404, detail=f"Component {request.name} not found locally")
+             
+        result = await publisher.publish_component(
+            component=component,
+            scoped_name=request.scoped_name,
+            private=request.private
+        )
+        
+        return {"success": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):

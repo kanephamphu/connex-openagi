@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Skill {
     name: string;
@@ -15,6 +16,37 @@ export default function SkillsPage() {
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+    const [publishingSkill, setPublishingSkill] = useState<Skill | null>(null);
+    const [scopedName, setScopedName] = useState("");
+    const [isPublishing, setIsPublishing] = useState(false);
+
+    const handlePublish = async () => {
+        if (!publishingSkill || !scopedName) return;
+        setIsPublishing(true);
+        try {
+            const res = await fetch("/api/registry/publish", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: publishingSkill.name,
+                    type: "skill",
+                    scoped_name: scopedName
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`Successfully published to ${scopedName}`);
+                setPublishingSkill(null);
+            } else {
+                alert(`Publishing failed: ${data.detail || data.message}`);
+            }
+        } catch (err) {
+            console.error("Failed to publish skill:", err);
+            alert("Publishing failed.");
+        } finally {
+            setIsPublishing(false);
+        }
+    };
 
     const fetchSkills = () => {
         fetch("/api/skills")
@@ -116,15 +148,65 @@ export default function SkillsPage() {
                                 <button className="text-xs text-blue-400 hover:text-blue-300">
                                     Configure
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        setPublishingSkill(skill);
+                                        setScopedName(`@user/${skill.name}`);
+                                    }}
+                                    className="text-xs text-green-400 hover:text-green-300"
+                                >
+                                    Publish
+                                </button>
                             </div>
                         </div>
                     ))}
 
+                    {/* Publish Modal */}
+                    {publishingSkill && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+                                <h2 className="text-2xl font-bold mb-4">Publish Skill</h2>
+                                <p className="text-neutral-400 text-sm mb-6">
+                                    Publish <strong>{publishingSkill.name}</strong> to the Connex Registry for others to use.
+                                </p>
+
+                                <div className="space-y-4 mb-8">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Scoped Name</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                                            placeholder="@username/skill-name"
+                                            value={scopedName}
+                                            onChange={(e) => setScopedName(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={() => setPublishingSkill(null)}
+                                        className="flex-1 px-4 py-2 rounded-xl border border-neutral-700 hover:bg-neutral-800 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handlePublish}
+                                        disabled={isPublishing || !scopedName}
+                                        className="flex-1 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all disabled:opacity-50"
+                                    >
+                                        {isPublishing ? "Publishing..." : "Confirm Publish"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Add New Placehodler */}
-                    <div className="bg-neutral-800/20 border-2 border-dashed border-neutral-700/50 rounded-xl p-6 flex flex-col items-center justify-center text-neutral-500 hover:border-neutral-600 hover:text-neutral-400 cursor-pointer transition-all min-h-[200px]">
+                    <Link href="/registry" className="bg-neutral-800/20 border-2 border-dashed border-neutral-700/50 rounded-xl p-6 flex flex-col items-center justify-center text-neutral-500 hover:border-neutral-600 hover:text-neutral-400 cursor-pointer transition-all min-h-[200px]">
                         <span className="text-3xl mb-2">+</span>
                         <span>Install New Skill</span>
-                    </div>
+                    </Link>
                 </div>
             )}
         </div>
