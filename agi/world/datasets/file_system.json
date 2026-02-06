@@ -1,0 +1,104 @@
+[
+    {
+        "concept": "file_system_operations",
+        "description": "Learning creation and deletion of files and their impact on storage and system resources.",
+        "samples": [
+            {
+                "state": {
+                    "storage": 1000,
+                    "api_credits": 100,
+                    "time": 0,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 100
+                },
+                "action": {
+                    "type": "CREATE_FILE",
+                    "params": {
+                        "size": 200
+                    }
+                },
+                "result": {
+                    "storage": 800,
+                    "api_credits": 100,
+                    "time": 1.5,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 99.0
+                }
+            },
+            {
+                "state": {
+                    "storage": 500,
+                    "api_credits": 100,
+                    "time": 10,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 80
+                },
+                "action": {
+                    "type": "DELETE_FILE",
+                    "params": {
+                        "size": 200
+                    }
+                },
+                "result": {
+                    "storage": 700,
+                    "api_credits": 100,
+                    "time": 0.2,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 79.9
+                }
+            },
+            {
+                "state": {
+                    "storage": 100,
+                    "api_credits": 100,
+                    "time": 50,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 50
+                },
+                "action": {
+                    "type": "CREATE_FILE",
+                    "params": {
+                        "size": 90
+                    }
+                },
+                "result": {
+                    "storage": 10,
+                    "api_credits": 100,
+                    "time": 2.0,
+                    "health": 99,
+                    "egress": 0,
+                    "energy": 48.0
+                }
+            },
+            {
+                "state": {
+                    "storage": 0,
+                    "api_credits": 100,
+                    "time": 100,
+                    "health": 95,
+                    "egress": 0,
+                    "energy": 30
+                },
+                "action": {
+                    "type": "DELETE_FILE",
+                    "params": {
+                        "size": 1000
+                    }
+                },
+                "result": {
+                    "storage": 1000,
+                    "api_credits": 100,
+                    "time": 1.0,
+                    "health": 95,
+                    "egress": 0,
+                    "energy": 29.5
+                }
+            }
+        ]
+    }
+]

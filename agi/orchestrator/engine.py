@@ -59,6 +59,8 @@ class Orchestrator:
         self.mapper = IOMapper()
         from agi.brain import GenAIBrain
         self.brain = GenAIBrain(config)
+        from agi.world.manager import WorldManager
+        self.world = WorldManager(config, self.brain)
     
     async def execute_plan(self, plan: ActionPlan) -> ExecutionResult:
         """
@@ -367,6 +369,24 @@ class Orchestrator:
             except Exception as v_err:
                  raise Exception(f"Input validation failed for '{action.skill}': {v_err}")
             
+            # --- Clean World Layer Integration ---
+            if self.config.verbose:
+                print(f"[Orchestrator] Verifying causality for '{action.id}'...")
+            
+            # Map skill/action to World Action Type (Simplified mapping for now)
+            world_action_type = "API_CALL" if action.skill != "file_manager" else "CREATE_FILE"
+            
+            # 1. Metaphysical Verification (Neural + Guard)
+            is_safe, error = await self.world.simulate_consequence(
+                action_type=world_action_type,
+                params=inputs,
+                description=action.description
+            )
+            
+            if not is_safe:
+                print(f"[Orchestrator] 🛑 METAPHYSICAL STOP: {error}")
+                raise Exception(f"World Violation: {error}")
+                
             # Execute with timeout
             try:
                 output = await asyncio.wait_for(
@@ -382,6 +402,27 @@ class Orchestrator:
             # Smart Validate & Map output
             if action.output_schema:
                 output = self.mapper.validate_output(output, action.output_schema, action.id)
+            
+            # 2. Commit World State & Get Feeling
+            world_result = await self.world.step(
+                action_type=world_action_type,
+                params=inputs,
+                description=action.description
+            )
+            
+            if self.config.verbose and world_result["success"]:
+                feeling = world_result["feeling"]
+                print(f"[Orchestrator] Feel: {feeling.get('categories')} | {feeling.get('interpretation')}")
+                
+            # --- Continuous Self-Learning ---
+            if world_result["success"]:
+                self.world.train_from_experience(
+                    world_result["old_state"],
+                    world_action_type,
+                    inputs,
+                    world_result["new_state"]
+                )
+                self.world.save_knowledge()
             
             # If skill returned explicit success=False or has an 'error' key, treat as execution error
             if isinstance(output, dict):

@@ -1,0 +1,42 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Feeling",
+    "description": "The subjective emotional/sensory response of the AGI to a world state change.",
+    "type": "object",
+    "properties": {
+        "valence": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1,
+            "description": "How positive or negative the feeling is (-1 to 1)."
+        },
+        "arousal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Intensity/Alertness level (0 to 1)."
+        },
+        "categories": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Emotional categories (fear, joy, curiosity, frustration, etc.)."
+        },
+        "intensity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+        },
+        "interpretation": {
+            "type": "string",
+            "description": "Narrative explanation of why the agent feels this way."
+        }
+    },
+    "required": [
+        "valence",
+        "arousal",
+        "categories",
+        "interpretation"
+    ]
+}

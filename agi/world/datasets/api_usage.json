@@ -1,0 +1,80 @@
+[
+    {
+        "concept": "api_usage",
+        "description": "Learning that API calls consume credits, time, and energy while potentially affecting health.",
+        "samples": [
+            {
+                "state": {
+                    "storage": 1000,
+                    "api_credits": 100,
+                    "time": 0,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 100
+                },
+                "action": {
+                    "type": "API_CALL",
+                    "params": {
+                        "cost": 1
+                    }
+                },
+                "result": {
+                    "storage": 1000,
+                    "api_credits": 99,
+                    "time": 2.0,
+                    "health": 100,
+                    "egress": 0.5,
+                    "energy": 98.5
+                }
+            },
+            {
+                "state": {
+                    "storage": 500,
+                    "api_credits": 50,
+                    "time": 100,
+                    "health": 100,
+                    "egress": 10,
+                    "energy": 40
+                },
+                "action": {
+                    "type": "API_CALL",
+                    "params": {
+                        "cost": 5
+                    }
+                },
+                "result": {
+                    "storage": 500,
+                    "api_credits": 45,
+                    "time": 10.0,
+                    "health": 99,
+                    "egress": 12,
+                    "energy": 35
+                }
+            },
+            {
+                "state": {
+                    "storage": 100,
+                    "api_credits": 5,
+                    "time": 500,
+                    "health": 95,
+                    "egress": 50,
+                    "energy": 10
+                },
+                "action": {
+                    "type": "API_CALL",
+                    "params": {
+                        "cost": 1
+                    }
+                },
+                "result": {
+                    "storage": 100,
+                    "api_credits": 4,
+                    "time": 2.5,
+                    "health": 95,
+                    "egress": 51,
+                    "energy": 8
+                }
+            }
+        ]
+    }
+]

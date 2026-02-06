@@ -1,0 +1,80 @@
+[
+    {
+        "concept": "system_maintenance",
+        "description": "Learning that time decay reduces energy and heavy tasks reduce health.",
+        "samples": [
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 0,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 100
+                },
+                "action": {
+                    "type": "IDLE",
+                    "params": {
+                        "duration": 3600
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 3600,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 90
+                }
+            },
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 100,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 20
+                },
+                "action": {
+                    "type": "RECHARGE",
+                    "params": {
+                        "source": "power_grid"
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 1800,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 100
+                }
+            },
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 0,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 50
+                },
+                "action": {
+                    "type": "STRESS_TEST",
+                    "params": {
+                        "intensity": 0.9
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 600,
+                    "health": 95,
+                    "egress": 0,
+                    "energy": 10
+                }
+            }
+        ]
+    }
+]

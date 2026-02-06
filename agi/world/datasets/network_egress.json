@@ -1,0 +1,83 @@
+[
+    {
+        "concept": "network_egress",
+        "description": "Learning that sending data outside consumes network quota (egress) and time.",
+        "samples": [
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 0,
+                    "health": 100,
+                    "egress": 0,
+                    "energy": 100
+                },
+                "action": {
+                    "type": "SEND_DATA",
+                    "params": {
+                        "size": 50,
+                        "destination": "remote_server"
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 5.0,
+                    "health": 100,
+                    "egress": 50,
+                    "energy": 98
+                }
+            },
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 10,
+                    "health": 100,
+                    "egress": 50,
+                    "energy": 90
+                },
+                "action": {
+                    "type": "SEND_DATA",
+                    "params": {
+                        "size": 100,
+                        "destination": "cloud_backup"
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 12.0,
+                    "health": 100,
+                    "egress": 150,
+                    "energy": 85
+                }
+            },
+            {
+                "state": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 30,
+                    "health": 95,
+                    "egress": 200,
+                    "energy": 50
+                },
+                "action": {
+                    "type": "SEND_DATA",
+                    "params": {
+                        "size": 10,
+                        "destination": "webhook"
+                    }
+                },
+                "result": {
+                    "api_credits": 100,
+                    "storage": 1000,
+                    "time": 1.0,
+                    "health": 95,
+                    "egress": 210,
+                    "energy": 49
+                }
+            }
+        ]
+    }
+]
