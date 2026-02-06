@@ -46,21 +46,27 @@ class Orchestrator:
     Manages state, routes actions to skills, and handles errors.
     """
     
-    def __init__(self, config, skill_registry):
+    def __init__(self, config, skill_registry, world_manager=None):
         """
         Initialize the orchestrator.
         
         Args:
             config: AGIConfig instance
             skill_registry: SkillRegistry instance
+            world_manager: Shared WorldManager instance
         """
         self.config = config
         self.skill_registry = skill_registry
         self.mapper = IOMapper()
         from agi.brain import GenAIBrain
         self.brain = GenAIBrain(config)
-        from agi.world.manager import WorldManager
-        self.world = WorldManager(config, self.brain)
+        
+        # Use shared world manager or initialize new one (fallback)
+        if world_manager:
+            self.world = world_manager
+        else:
+            from agi.world.manager import WorldManager
+            self.world = WorldManager(config, self.brain)
     
     async def execute_plan(self, plan: ActionPlan) -> ExecutionResult:
         """

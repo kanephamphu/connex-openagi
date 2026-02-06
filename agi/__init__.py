@@ -55,12 +55,18 @@ class AGI:
         from agi.planner.brain_planner import BrainPlanner
         self.planner = BrainPlanner(self.config)
         self.skill_registry = SkillRegistry(self.config)
+        from agi.world.manager import WorldManager
+        self.world = WorldManager(self.config, self.brain)
+        
         self.orchestrator = Orchestrator(
             config=self.config,
-            skill_registry=self.skill_registry
+            skill_registry=self.skill_registry,
+            world_manager=self.world
         )
         # Tier Peer Layers
         self.perception = PerceptionLayer(self.config)
+        self.perception.grounding_callback = self.world.handle_perception
+        
         self.reflex = ReflexLayer(self.config)
         self.memory = MemoryManager(self.config, self.brain)
         setattr(self.config, 'memory_manager', self.memory)

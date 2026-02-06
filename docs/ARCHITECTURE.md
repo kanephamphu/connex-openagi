@@ -99,7 +99,13 @@ graph TD
 - **Mechanism**: Reads logs/traces post-execution.
 - **Function**: Reviews performance quality and triggers **Skill Acquisition** to improve the AGI's future power.
 
-### 7. Memory System
+### 7. World Layer (Tier 5)
+- **Role**: World Physics & Reality Anchor.
+- **Mechanism**: Prompt-free neural transition model (PyTorch MLP), grounded via **Perception pushing**.
+- **Function**: Predicts action consequences while being continuously synchronized with real-time MCP sensor data (Storage, Health, Energy).
+- **Communication**: Receives grounding signals from Perception and provides transition predictions to the Orchestrator.
+
+### 8. Memory System
 - **Role**: Experience Storage.
 - **Mechanism**: SQLite-backed Vector DB.
 - **Function**: Provides semantic recall of past interactions and daily experience summarization.

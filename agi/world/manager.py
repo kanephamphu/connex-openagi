@@ -25,6 +25,34 @@ class WorldManager:
         self.state = WorldState()
         self._setup_initial_resources()
 
+    async def handle_perception(self, module_name: str, data: Any):
+        """
+        Grounded callback: Process incoming sensor data to anchor world state.
+        This is triggered automatically by the Perception Layer.
+        """
+        if module_name == "system_monitor":
+            await self._ground_system_metrics(data)
+        # Add more mappings here as perception modules grow
+        
+    async def _ground_system_metrics(self, data: Dict[str, Any]):
+        """Special handling for system health grounding."""
+        metrics = data.get("metrics", {})
+        
+        # 1. Ground Storage (disk_free_gb -> MB)
+        if "disk_free_gb" in metrics:
+            storage_mb = metrics["disk_free_gb"] * 1024
+            self.state.resources["storage"] = Resource("storage", float(storage_mb), "MB")
+            
+        # 2. Ground Health (CPU load as stress proxy)
+        if "cpu_percent" in metrics:
+            cpu = metrics["cpu_percent"]
+            # Derived health: 100 is perfect, drops with load
+            derived_health = max(0, 100 - (cpu / 2))
+            self.state.resources["health"] = Resource("health", float(derived_health), "%")
+            
+        if self.config.verbose:
+            print(f"[WorldManager] 🌏 Reality Anchor: Grounded via {data.get('node', 'local')}")
+
     def _setup_initial_resources(self):
         """Initial bootstrap of the world's measured values."""
         self.state.resources["storage"] = Resource("storage", 1000, "MB")

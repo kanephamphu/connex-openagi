@@ -132,7 +132,15 @@ The persistent knowledge storage that enables long-term learning.
 - **Long-Term**: SQLite vector storage for semantic retrieval of past interactions.
 - **Process**: Daily summarization of logs into high-level "Experience Notes".
 
-### 8. Sub-Brain System (Local Acceleration) 🚀
+### 8. World Layer (World Cognition) 🌍
+**"The AGI's Theory of Physics"**
+
+The World Layer provides a prompt-free, neural-network-based model of world dynamics, anchored by real-time perception.
+- **Latent Metaphysical Core**: A PyTorch MLP that predicts state transitions $(S, A) \to S'$.
+- **Reality Grounding**: Continuously anchored by the **Perception Layer**. When sensors (like `system_monitor`) measure real-time data, they "push" updates to the world model to ensure simulation matches reality.
+- **Epistemic Layer**: Interprets objective world data into subjective "feelings" or insights.
+
+### 9. Sub-Brain System (Local Acceleration) 🚀
 A parallel processing infrastructure for offloading auxiliary cognitive tasks to local LLMs.
 - **Purpose**: Fast, privacy-preserving execution of sub-tasks like emotion detection or intent classification.
 - **Architecture**: `SubBrainManager` coordinates multiple `SubBrainHost` instances.

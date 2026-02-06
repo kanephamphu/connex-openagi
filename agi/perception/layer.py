@@ -18,6 +18,9 @@ class PerceptionLayer:
         self.modules_path = self.config.perception_storage_path
         os.makedirs(self.modules_path, exist_ok=True)
         
+        # Grounding callback for world layer anchoring
+        self.grounding_callback: Optional[callable] = None
+
         # Initialize Database
         from agi.utils.database import DatabaseManager
         self.db = DatabaseManager()
@@ -246,7 +249,22 @@ class PerceptionLayer:
         if not module.connected:
             await module.connect()
             
-        return await module.perceive(query, **kwargs)
+        result = await module.perceive(query, **kwargs)
+        
+        # Push to world grounding hook if registered
+        if self.grounding_callback:
+            try:
+                # We don't await this to keep perception low-latency, 
+                # but if the callback is async, we should probably handle it.
+                if asyncio.iscoroutinefunction(self.grounding_callback):
+                    asyncio.create_task(self.grounding_callback(module_name, result))
+                else:
+                    self.grounding_callback(module_name, result)
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"[Perception] ⚠️ Grounding callback failed: {e}")
+                    
+        return result
 
     async def install_module(self, source_path_or_url: str):
         """
