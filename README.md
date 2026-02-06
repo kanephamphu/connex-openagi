@@ -29,6 +29,10 @@ graph TD
         Planner[["🏗️ Tier 1: Planner"]]
         Orchestrator[["⚙️ Tier 2: Orchestrator"]]
     end
+
+    subgraph World["🌍 TIER 5 (WORLD COGNITION)"]
+        WorldLayer[["🌍 World Layer / Causality"]]
+    end
     
     subgraph Workers["🛠️ TIER 3 (EXECUTION)"]
         SkillDock["🔧 SkillDock / Workers"]
@@ -36,7 +40,7 @@ graph TD
     
     subgraph Evolution["🌱 TIER 4 (SELF-EVOLUTION)"]
         Motivation["📈 Motivation System"]
-        Memory["💾 Memory System"]
+        Memory["💾 Tier 6: Memory System"]
     end
 
     %% Flow Connections
@@ -48,8 +52,11 @@ graph TD
 
     Perception -->|Context| Planner
     Reflex -->|Automated Plan| Orchestrator
+
+    Perception -.->|Grounding| WorldLayer
     
     Planner -->|Action DAG| Orchestrator
+    Orchestrator <-->|Causality Check| WorldLayer
     Orchestrator -->|Skill Call| SkillDock
     SkillDock -->|Result| Orchestrator
     
@@ -65,6 +72,7 @@ graph TD
     style SubBrain fill:#f3e5f5,stroke:#8e24aa,stroke-width:3px,color:#4a148c
     style Planner fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
     style Orchestrator fill:#e8f5e9,stroke:#43a047,stroke-width:2px
+    style WorldLayer fill:#fff8e1,stroke:#fbc02d,stroke-width:2px
     style SkillDock fill:#f1f8e9,stroke:#7cb342,stroke-width:2px
     style Motivation fill:#fff3e0,stroke:#fb8c00,stroke-width:2px
     style Memory fill:#fff8e1,stroke:#ffb300,stroke-width:2px
@@ -79,7 +87,7 @@ graph TD
 For a detailed technical breakdown of the 8-tier system, see **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 
-### 1. Perception Layer (Senses) 👁️
+### 1. Tier Peer: Perception Layer (Senses) 👁️
 **"The Eyes and Ears of the AGI"**
 
 The Perception Layer connects the AGI to the real world using the **Model Context Protocol (MCP)**.
@@ -91,7 +99,7 @@ The Perception Layer connects the AGI to the real world using the **Model Contex
     - Checking server status
     - Analyzing a video stream
 
-### 2. Reflex Layer (Unconditional Reflex) ⚡
+### 2. Tier Peer: Reflex Layer (Unconditional Reflex) ⚡
 **"The Nervous System"**
 
 Reflexes are pre-programmed, automatic responses to specific triggers. They bypass the slow, expensive reasoning of the Planner for known, critical events.
@@ -120,27 +128,28 @@ Modular skills that perform actual work.
 - **Built-in Skills**: Web search, HTTP client, code execution
 - **Custom Skills**: Easy to create and install from Registry
 
-### 6. Motivation System (Self-Improvement) 📈
+### 6. Tier 4: Motivation System (Self-Improvement) 📈
 The reflective layer that monitors performance and triggers learning.
 - **Log Review**: Analyzes execution logs to identify failures or bottlenecks.
 - **Self-Evaluation**: Uses the Brain to assess if goals were met efficiently.
 - **Skill Acquisition**: Autonomously generates and installs new skills to bridge capability gaps.
 
-### 7. Memory System (Experience) 🧠
+### 7. Tier 5: World Layer (World Cognition) 🌍
+**"The AGI's Theory of Physics"**
+
+The World Layer provides a prompt-free, neural-network-based model of world dynamics, anchored by real-time perception.
+- **Latent Metaphysical Core**: A PyTorch MLP that predicts state transitions $(S, A) \to S'$.
+- **Reality Grounding**: Continuously anchored by the **Perception Layer**. When sensors (like `system_monitor`) measure real-time data, they "push" updates to the world model.
+- **Verification**: The Orchestrator queries the World Layer to verify that a planned action is "physically" possible and safe according to the current world state.
+- **Epistemic Layer**: Interprets objective world data into subjective "feelings" or insights.
+
+### 8. Tier 6: Memory System (Experience) 🧠
 The persistent knowledge storage that enables long-term learning.
 - **Short-Term**: RAM-based cache for immediate dialogue context.
 - **Long-Term**: SQLite vector storage for semantic retrieval of past interactions.
 - **Process**: Daily summarization of logs into high-level "Experience Notes".
 
-### 8. World Layer (World Cognition) 🌍
-**"The AGI's Theory of Physics"**
-
-The World Layer provides a prompt-free, neural-network-based model of world dynamics, anchored by real-time perception.
-- **Latent Metaphysical Core**: A PyTorch MLP that predicts state transitions $(S, A) \to S'$.
-- **Reality Grounding**: Continuously anchored by the **Perception Layer**. When sensors (like `system_monitor`) measure real-time data, they "push" updates to the world model to ensure simulation matches reality.
-- **Epistemic Layer**: Interprets objective world data into subjective "feelings" or insights.
-
-### 9. Sub-Brain System (Local Acceleration) 🚀
+### 9. Tier 8: Sub-Brain System (Local Acceleration) 🚀
 A parallel processing infrastructure for offloading auxiliary cognitive tasks to local LLMs.
 - **Purpose**: Fast, privacy-preserving execution of sub-tasks like emotion detection or intent classification.
 - **Architecture**: `SubBrainManager` coordinates multiple `SubBrainHost` instances.
