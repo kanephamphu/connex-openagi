@@ -257,9 +257,7 @@ class GenAIBrain:
         
         # Prepare Context
         summary = (context or {}).get('summary', 'None')
-        history_raw = (context or {}).get('recent_history', [])
-        history = json.dumps(history_raw[:-5] if len(history_raw) > 5 else history_raw)
-
+        
         # 2. Unified Prompt
         prompt_text = (
                 "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
