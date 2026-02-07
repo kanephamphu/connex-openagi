@@ -234,7 +234,7 @@ class GenAIBrain:
             return self.config.default_executor, self.config.executor_model
         
         if self.config.openai_api_key:
-            return "openai", "gpt-4.1o-nano"
+            return "openai", "gpt-5-nano"
         
         raise ValueError("No default provider configured. Please set OPENAI_API_KEY or default_executor.")
 
@@ -255,193 +255,165 @@ class GenAIBrain:
         # 1. Routing Decision: Always prefer Sub-Brain Manager if available (it handles both local and external configs)
         target_brain = sub_brain_manager
         
+        # Prepare Context
+        summary = (context or {}).get('summary', 'None')
+        history_raw = (context or {}).get('recent_history', [])
+        history = json.dumps(history_raw[:-5] if len(history_raw) > 5 else history_raw)
+
+        # 2. Unified Prompt
+        prompt_text = (
+                "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
+                "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier AND extract notable information.\n\n"
+                "### CATEGORIES\n"
+                "1. CHAT: Social interactions, greetings, bot identity, or simple acknowledgement.\n"
+                "2. RESEARCH: Knowledge lookups, news, weather, or finding facts online.\n"
+                "3. SINGLE_ACTION: One-off system/file commands (opening apps, volume, file management).\n"
+                "4. PLAN: Multi-step goals, data synthesis, or complex problem solving.\n\n"
+                "### NOTABLE INFORMATION\n"
+                "1. New Info: Extract specific entities/preferences the user provides (e.g., 'my name is X'). Key-Value pair.\n"
+                "2. Need-to-Know: If user asks for info that might be stored (e.g., 'what is my API key?', 'call mom'), extract the key with an EMPTY string value (\"\").\n"
+                "Format: {\"intent\": \"...\", \"notable_information\": {\"key\": \"value_or_empty\"}}\n"
+                "If no notable info, return empty dict.\n\n"
+                "### EXAMPLES\n"
+                "- \"Hey there\" -> {\"intent\": \"CHAT\", \"notable_information\": {}}\n"
+                "- \"Find news about Apple\" -> {\"intent\": \"RESEARCH\", \"notable_information\": {}}\n"
+                "- \"My mom's phone number is 555-0199\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"555-0199\"}}\n"
+                "- \"What is my mom's phone number?\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"\"}}\n"
+                "- \"I save my API key as sk-123\" -> {\"intent\": \"SINGLE_ACTION\", \"notable_information\": {\"api_key\": \"sk-123\"}}\n"
+                "- \"Use my personal API key\" -> {\"intent\": \"PLAN\", \"notable_information\": {\"personal_api_key\": \"\"}}\n\n"
+                "### CONTEXT\n"
+                f"Summary: {summary}\n"
+                f"USER INPUT: \"{query}\"\n"
+                "DECISION (JSON ONLY):"
+            )
+
+        result_raw = ""
+        
+        # 3. Try Sub-Brain Manager
         if target_brain:
             try:
-                # Use detailed prompt for all providers to preserve context
-                prompt_text = (
-                        "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
-                        "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier AND extract notable information.\n\n"
-                        "### CATEGORIES\n"
-                        "1. CHAT: Social interactions, greetings, bot identity, or simple acknowledgement.\n"
-                        "2. RESEARCH: Knowledge lookups, news, weather, or finding facts online.\n"
-                        "3. SINGLE_ACTION: One-off system/file commands (opening apps, volume, file management).\n"
-                        "4. PLAN: Multi-step goals, data synthesis, or complex problem solving.\n\n"
-                        "### NOTABLE INFORMATION\n"
-                        "1. New Info: Extract specific entities/preferences the user provides (e.g., 'my name is X'). Key-Value pair.\n"
-                        "2. Need-to-Know: If user asks for info that might be stored (e.g., 'what is my API key?', 'call mom'), extract the key with an EMPTY string value (\"\").\n"
-                        "Format: {\"intent\": \"...\", \"notable_information\": {\"key\": \"value_or_empty\"}}\n"
-                        "If no notable info, return empty dict.\n\n"
-                        "### EXAMPLES\n"
-                        "- \"Hey there\" -> {\"intent\": \"CHAT\", \"notable_information\": {}}\n"
-                        "- \"Find news about Apple\" -> {\"intent\": \"RESEARCH\", \"notable_information\": {}}\n"
-                        "- \"My mom's phone number is 555-0199\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"555-0199\"}}\n"
-                        "- \"What is my mom's phone number?\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"\"}}\n"
-                        "- \"I save my API key as sk-123\" -> {\"intent\": \"SINGLE_ACTION\", \"notable_information\": {\"api_key\": \"sk-123\"}}\n"
-                        "- \"Use my personal API key\" -> {\"intent\": \"PLAN\", \"notable_information\": {\"personal_api_key\": \"\"}}\n\n"
-                        f"USER INPUT: \"{query}\"\n"
-                        "DECISION (JSON ONLY):"
-                    )
-
                 task = {
                     "prompt": prompt_text,
                     "system": "Respond ONLY with valid JSON containing \"intent\" and \"notable_information\"."
                 }
-
-                print(prompt_text)
                 
                 results = await target_brain.execute_parallel([task])
-                result_raw = results[0].strip() if results else "{}"
-                
-                # Clean up potential markdown code blocks
-                if "```" in result_raw:
-                    parts = result_raw.split("```")
-                    if len(parts) > 1:
-                        result_raw = parts[1].strip()
-                        if result_raw.startswith("json"):
-                            result_raw = result_raw[4:].strip()
-                try:
-                    parsed = json.loads(result_raw)
-                    intent_raw = parsed.get("intent", "PLAN").upper()
-                    notable_info = parsed.get("notable_information", {})
-                    
-                    # Store notable info if present and NOT empty
-                    if notable_info:
-                        try:
-                            from agi.utils.database import DatabaseManager
-                            db = DatabaseManager()
-                            for k, v in notable_info.items():
-                                if v: # Only save if user provided a value
-                                    db.set_notable_info(k, v)
-                                    if self.config.verbose:
-                                        print(f"[Brain] Stored notable info: {k}={v}")
-                                else:
-                                    # Empty value means "need to know" / retrieval
-                                    if self.config.verbose:
-                                        # diagnostic lookup
-                                        pass
-                                        
-                        except Exception as db_e:
-                            print(f"[Brain] Failed to process notable info: {db_e}")
-
-                except json.JSONDecodeError:
-                    # Fallback if model fails to output JSON (e.g. outputs just string)
-                    if self.config.verbose:
-                         print(f"[Brain] JSON Decode Error on intent: {result_raw}")
-                    intent_raw = result_raw.upper()
-
-                valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
-                final_intent = "PLAN"
-                for i in valid_intents:
-                    if i in intent_raw:
-                        final_intent = i
-                        break
-                return final_intent, notable_info
+                if results and results[0]:
+                    result_raw = results[0].strip()
             except Exception as e:
                 if self.config.verbose:
                     print(f"[Brain] Sub-brain intent classification error: {e}")
                 pass # Fallback to cloud
-        
-        # 2. Cloud Fallback
-        provider, model = self.select_model(TaskType.FAST)
-        client = self.get_client(provider)
-        
-        prompt = f"""
-        ### INTENT CLASSIFICATION ENGINE
-        Classify the user's intent into exactly one of these categories:
-        
-        'CHAT': Greetings, personality questions, social talk, or simple conversational turns.
-        'RESEARCH': Fact-finding, information retrieval, news, weather, or general knowledge search.
-        'SINGLE_ACTION': A single clear command (e.g. open app, system controls, file operations).
-        'PLAN': Multi-step goals, data analysis, or missions requiring a sequence of different skills.
-        
-        ### EXAMPLES
-        - "Hi!" -> CHAT
-        - "What can you do?" -> CHAT
-        - "Population of Japan" -> RESEARCH
-        - "Latest technology news" -> RESEARCH
-        - "Turn up the volume" -> SINGLE_ACTION
-        - "Take a screenshot" -> SINGLE_ACTION
-        - "Find a restaurant and save its menu to a text file" -> PLAN
-        - "Analyze these logs and summarize the errors" -> PLAN
 
-        ### CONTEXT
-        Summary: {(context or {}).get('summary', 'None')}
-        Recent History: {json.dumps((context or {}).get('recent_history', [])[:-5])}
-
-        ### USER QUERY
-        "{query}"
-        
-        Respond ONLY with the word: CHAT, RESEARCH, SINGLE_ACTION, or PLAN.
-        """
-        
-        try:
-            if provider in ["openai", "deepseek", "groq"]:
-                kwargs = {
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_tokens": 20
-                }
-                
-                try:
-                    response = await client.chat.completions.create(**kwargs)
-                except Exception as e:
-                    # Robust retry for newer reasoning models (e.g. o1)
-                    retry_needed = False
-                    err_str = str(e).lower()
+        # 4. Cloud Fallback (if sub-brain missing or failed)
+        if not result_raw or result_raw == "{}":
+            provider, model = self.select_model(TaskType.FAST)
+            client = self.get_client(provider)
+            
+            system_instruction = "Respond ONLY with valid JSON containing \"intent\" and \"notable_information\"."
+            
+            try:
+                if provider in ["openai", "deepseek", "groq"]:
+                    kwargs = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": prompt_text}
+                        ],
+                        "temperature": 0,
+                        "max_tokens": 150
+                    }
                     
-                    if "max_tokens" in err_str and "supported" in err_str:
-                        kwargs.pop("max_tokens", None)
-                        kwargs["max_completion_tokens"] = 20
-                        retry_needed = True
-                        
-                    if "temperature" in err_str and ("supported" in err_str or "value" in err_str):
-                        kwargs["temperature"] = 1.0
-                        retry_needed = True
-                        
-                    if retry_needed:
+                    try:
                         response = await client.chat.completions.create(**kwargs)
-                    else:
-                        raise e
+                    except Exception as e:
+                        # Robust parameter retry
+                        retry_needed = False
+                        err_str = str(e).lower()
+                        if "max_tokens" in err_str and "supported" in err_str:
+                            kwargs.pop("max_tokens", None)
+                            kwargs["max_completion_tokens"] = 150
+                            retry_needed = True
+                        if "temperature" in err_str and ("supported" in err_str or "value" in err_str):
+                            kwargs["temperature"] = 1.0
+                            retry_needed = True
+                        
+                        if retry_needed:
+                            response = await client.chat.completions.create(**kwargs)
+                        else:
+                            raise e
 
-                intent_raw = response.choices[0].message.content.strip().upper()
-            elif provider == "anthropic":
-                response = await client.messages.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                    max_tokens=20
-                )
-                intent_raw = response.content[0].text.strip().upper()
-            else:
-                intent_raw = "PLAN"
+                    result_raw = response.choices[0].message.content.strip()
+                    
+                elif provider == "anthropic":
+                    response = await client.messages.create(
+                        model=model,
+                        system=system_instruction,
+                        messages=[{"role": "user", "content": prompt_text}],
+                        temperature=0,
+                        max_tokens=150
+                    )
+                    result_raw = response.content[0].text.strip()
+                else:
+                    return "PLAN", {}
             
-            # Robust mapping
-            mapping = {
-                "CHAT": "CHAT",
-                "RESEARCH": "RESEARCH",
-                "SINGLE_ACTION": "SINGLE_ACTION",
-                "PLAN": "PLAN"
-            }
-            
-            for key, val in mapping.items():
-                if key in intent_raw:
-                    return val, {}
-            
-            return ("CHAT", {}) if "CHAT" in intent_raw else ("PLAN", {})
+            except Exception as e:
+                print(f"[Brain] Cloud intent classification failed: {e}")
+                return "PLAN", {}
 
-        except Exception as e:
-            print(f"[Brain] Intent classification failed: {e}")
+        # 5. Process Result (Unified Parser)
+        try:
+            # Clean up markdown
+            if "```" in result_raw:
+                parts = result_raw.split("```")
+                if len(parts) > 1:
+                    result_raw = parts[1].strip()
+                    if result_raw.startswith("json"):
+                        result_raw = result_raw[4:].strip()
+            
+            if self.config.verbose:
+                print(f"[Brain] Raw Intent Response: {result_raw}")
+
+            parsed = json.loads(result_raw)
+            intent_raw = parsed.get("intent", "PLAN").upper()
+            notable_info = parsed.get("notable_information", {})
+            
+            # Store notable info to DB if present
+            if notable_info:
+                try:
+                    from agi.utils.database import DatabaseManager
+                    db = DatabaseManager()
+                    for k, v in notable_info.items():
+                        if v: # Only save explicit values
+                            db.set_notable_info(k, v)
+                            if self.config.verbose:
+                                print(f"[Brain] Stored notable info: {k}={v}")
+                except Exception as db_e:
+                    print(f"[Brain] Notable info DB error: {db_e}")
+            
+            # Normalize Intent
+            valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
+            final_intent = "PLAN"
+            for i in valid_intents:
+                if i in intent_raw:
+                    final_intent = i
+                    break
+            
+            return final_intent, notable_info
+
+        except (json.JSONDecodeError, Exception) as parse_err:
+            if self.config.verbose:
+                    print(f"[Brain] JSON Decode Error on intent: {result_raw}")
+            
+            # Fallback: Try to salvage simple string intent
+            intent_raw = result_raw.upper()
+            valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
+            for i in valid_intents:
+                if i in intent_raw:
+                    return i, {}
+            
             return "PLAN", {}
 
-    def _get_default_provider_and_model(self) -> tuple[str, str]:
-        """Recursive fallback for defaults."""
-        if self.config.default_executor:
-            return self.config.default_executor, self.config.executor_model
-        
-        if self.config.openai_api_key:
-            return "openai", "gpt-4o"
-        
     async def get_embedding(self, text: str) -> List[float]:
         """
         Generate vector embedding for text.
@@ -468,4 +440,3 @@ class GenAIBrain:
             pass
             
         raise ValueError("No embedding provider configured. Please set OPENAI_API_KEY.")
-

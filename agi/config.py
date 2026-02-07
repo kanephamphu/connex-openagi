@@ -39,9 +39,9 @@ class AGIConfig:
     # Model Selection
     default_planner: PlannerType = "openai"
     default_executor: ExecutorType = "openai"
-    
+        
     # Runtime Configuration
-    verbose: bool = False
+    verbose: bool = True
     max_retries: int = 3
     action_timeout: int = 60
     self_correction_enabled: bool = True

@@ -407,7 +407,6 @@ class AGI:
             
             merged_context["notable_information"] = final_notable
 
-
             if self.config.verbose:
                 print(f"[AGI] Detected intent: {intent}")
                 
@@ -419,6 +418,13 @@ class AGI:
                 
                 # Direct Chat with history
                 chat_messages = []
+                
+                # Add Notable Information first (system level context)
+                if merged_context.get("notable_information"):
+                    import json
+                    info_str = json.dumps(merged_context["notable_information"], indent=2)
+                    chat_messages.append({"role": "system", "content": f"User Notable Information: {info_str}"})
+
                 if working_memory["summary"]:
                     chat_messages.append({"role": "system", "content": f"Conversation Summary: {working_memory['summary']}"})
                 
