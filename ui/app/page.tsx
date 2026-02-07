@@ -164,6 +164,13 @@ export default function AGIChatPage() {
                     content: traceContent,
                     status: "completed"
                   }]
+
+                  // Auto-expand messages with trace data
+                  setExpandedMessages(prev => {
+                    const next = new Set(prev)
+                    next.add(lastIdx)
+                    return next
+                  })
                 }
 
                 newMsgs[lastIdx] = lastMsg
