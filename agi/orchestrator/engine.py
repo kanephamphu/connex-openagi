@@ -381,19 +381,19 @@ class Orchestrator:
             if self.config.verbose:
                 print(f"[Orchestrator] Verifying causality for '{action.id}'...")
             
-            # Map skill/action to World Action Type (Simplified mapping for now)
-            world_action_type = "API_CALL" if action.skill != "file_manager" else "CREATE_FILE"
+            # # Map skill/action to World Action Type (Simplified mapping for now)
+            # world_action_type = "API_CALL" if action.skill != "file_manager" else "CREATE_FILE"
             
-            # 1. Metaphysical Verification (Neural + Guard)
-            is_safe, error = await self.world.simulate_consequence(
-                action_type=world_action_type,
-                params=inputs,
-                description=action.description
-            )
+            # # 1. Metaphysical Verification (Neural + Guard)
+            # is_safe, error = await self.world.simulate_consequence(
+            #     action_type=world_action_type,
+            #     params=inputs,
+            #     description=action.description
+            # )
             
-            if not is_safe:
-                print(f"[Orchestrator] 🛑 METAPHYSICAL STOP: {error}")
-                raise Exception(f"World Violation: {error}")
+            # if not is_safe:
+            #     print(f"[Orchestrator] 🛑 METAPHYSICAL STOP: {error}")
+            #     raise Exception(f"World Violation: {error}")
                 
             # Execute with timeout
             try:

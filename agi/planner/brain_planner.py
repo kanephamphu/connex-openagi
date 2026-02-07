@@ -246,8 +246,6 @@ class BrainPlanner(Planner):
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens,
                     response_format={"type": "json_object"},
                     stream=True
                 )

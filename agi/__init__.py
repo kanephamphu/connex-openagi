@@ -445,9 +445,16 @@ class AGI:
                     print("[AGI] Creating plan with matched skills...")
                 
                 final_plan = None
+                planning_error = None
                 async for update in self.planner.create_plan_streaming(refined_goal, merged_context, unique_skills):
                     if update.get("type") == "planning_started":
                         continue # Already yielded initial planning start
+                    
+                    # Check for planning errors
+                    if update.get("type") == "planning_error":
+                        planning_error = update.get("error")
+                        if self.config.verbose:
+                            print(f"[AGI] Planning error: {planning_error}")
                     
                     # UI Hint: Expand the plan view by default
                     update["expanded"] = True
@@ -463,7 +470,10 @@ class AGI:
                 
                 if not final_plan:
                     if self.config.verbose:
-                        print("[AGI] No plan generated.")
+                        if planning_error:
+                            print(f"[AGI] No plan generated. Error: {planning_error}")
+                        else:
+                            print("[AGI] No plan generated.")
                     return
 
                 # Stream execution phase
