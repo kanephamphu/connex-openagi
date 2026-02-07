@@ -351,7 +351,7 @@ class AGI:
                 print("[AGI] Entering reasoning phase...")
             
             # --- Emotion Detection (Parallel via Sub-Brains) ---
-            asyncio.create_task(self.perception.perceive("emotion", goal))
+            # asyncio.create_task(self.perception.perceive("emotion", goal))
             
             reasoning_content = ""
             
@@ -374,21 +374,40 @@ class AGI:
             working_memory = self.memory.get_working_memory()
             emotional_context = self.memory.emotional_state
             
-            # Fetch Notable Info
-            from agi.utils.database import DatabaseManager
-            db = DatabaseManager()
-            notable_info = db.get_all_notable_info()
+            # --- Intent Classification ---
+            intent, notable_info_extracted = await self.brain.classify_intent_fast(goal, working_memory, self.sub_brain)
             
+            # Context Merging Strategy:
+            # 1. Start with base context
             merged_context = {
                 **(context or {}),
                 "conversation_history": working_memory["recent_history"],
                 "conversation_summary": working_memory["summary"],
-                "notable_information": notable_info,
                 **emotional_context
             }
 
-            # --- Intent Classification ---
-            intent = await self.brain.classify_intent_fast(goal, working_memory, self.sub_brain)
+            # 2. Add Notable Info (Selective Fetch)
+            # Merge extracted info. If value is empty, it means we need to fetch from DB.
+            final_notable = {}
+            if notable_info_extracted:
+                 for k, v in notable_info_extracted.items():
+                      if v:
+                          # User provided value, use it
+                          final_notable[k] = v
+                      else:
+                          # Ambiguous/Empty -> Fetch from DB
+                          try:
+                               from agi.utils.database import DatabaseManager
+                               db = DatabaseManager()
+                               val = db.get_notable_info(k)
+                               if val:
+                                   final_notable[k] = val
+                          except:
+                               pass
+            
+            merged_context["notable_information"] = final_notable
+
+
             if self.config.verbose:
                 print(f"[AGI] Detected intent: {intent}")
                 

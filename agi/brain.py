@@ -155,7 +155,7 @@ class GenAIBrain:
                 stream = await client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt    }],
-                    temperature=0.3,
+                    temperature=1,
                     stream=True
                 )
                 async for chunk in stream:
@@ -238,24 +238,27 @@ class GenAIBrain:
         
         raise ValueError("No default provider configured. Please set OPENAI_API_KEY or default_executor.")
 
-    async def classify_intent_fast(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
+    async def classify_intent_fast(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> tuple[str, Dict[str, Any]]:
         """
         Wrapper for unified intent classification.
         """
         return await self.classify_intent(query, context, sub_brain_manager)
 
-    async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> str:
+    async def classify_intent(self, query: str, context: Optional[Dict[str, Any]] = None, sub_brain_manager: Optional[Any] = None) -> tuple[str, Dict[str, Any]]:
         """
         Classify the user intent into core categories.
         Supports CHAT, RESEARCH, SINGLE_ACTION, PLAN.
+        
+        Returns:
+            (intent_string, notable_information_dict)
         """
-        # 1. Routing Decision: Local Sub-Brain vs External
-        target_brain = sub_brain_manager if not self.config.use_external_subbrain else None
+        # 1. Routing Decision: Always prefer Sub-Brain Manager if available (it handles both local and external configs)
+        target_brain = sub_brain_manager
         
         if target_brain:
             try:
-                task = {
-                    "prompt": (
+                # Use detailed prompt for all providers to preserve context
+                prompt_text = (
                         "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
                         "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier AND extract notable information.\n\n"
                         "### CATEGORIES\n"
@@ -277,21 +280,27 @@ class GenAIBrain:
                         "- \"Use my personal API key\" -> {\"intent\": \"PLAN\", \"notable_information\": {\"personal_api_key\": \"\"}}\n\n"
                         f"USER INPUT: \"{query}\"\n"
                         "DECISION (JSON ONLY):"
-                    ),
+                    )
+
+                task = {
+                    "prompt": prompt_text,
                     "system": "Respond ONLY with valid JSON containing \"intent\" and \"notable_information\"."
                 }
+
+                print(prompt_text)
+                
                 results = await target_brain.execute_parallel([task])
                 result_raw = results[0].strip() if results else "{}"
                 
                 # Clean up potential markdown code blocks
                 if "```" in result_raw:
-                    result_raw = result_raw.split("```")[1].strip()
-                    if result_raw.startswith("json"):
-                        result_raw = result_raw[4:].strip()
-                
+                    parts = result_raw.split("```")
+                    if len(parts) > 1:
+                        result_raw = parts[1].strip()
+                        if result_raw.startswith("json"):
+                            result_raw = result_raw[4:].strip()
                 try:
                     parsed = json.loads(result_raw)
-                    print(parsed)
                     intent_raw = parsed.get("intent", "PLAN").upper()
                     notable_info = parsed.get("notable_information", {})
                     
@@ -307,27 +316,30 @@ class GenAIBrain:
                                         print(f"[Brain] Stored notable info: {k}={v}")
                                 else:
                                     # Empty value means "need to know" / retrieval
-                                    # Logic: The Planner receives all notable info in context, 
-                                    # so we just ensure we don't overwrite the DB with empty string.
                                     if self.config.verbose:
-                                        found = db.get_notable_info(k)
-                                        print(f"[Brain] Identified need-to-know: {k} (Found in DB: {found is not None})")
+                                        # diagnostic lookup
+                                        pass
                                         
                         except Exception as db_e:
                             print(f"[Brain] Failed to process notable info: {db_e}")
 
                 except json.JSONDecodeError:
                     # Fallback if model fails to output JSON (e.g. outputs just string)
+                    if self.config.verbose:
+                         print(f"[Brain] JSON Decode Error on intent: {result_raw}")
                     intent_raw = result_raw.upper()
 
                 valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
+                final_intent = "PLAN"
                 for i in valid_intents:
                     if i in intent_raw:
-                        return i
+                        final_intent = i
+                        break
+                return final_intent, notable_info
             except Exception as e:
-                 if self.config.verbose:
+                if self.config.verbose:
                     print(f"[Brain] Sub-brain intent classification error: {e}")
-                 pass # Fallback to cloud
+                pass # Fallback to cloud
         
         # 2. Cloud Fallback
         provider, model = self.select_model(TaskType.FAST)
@@ -364,12 +376,34 @@ class GenAIBrain:
         
         try:
             if provider in ["openai", "deepseek", "groq"]:
-                response = await client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                    max_tokens=20
-                )
+                kwargs = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0,
+                    "max_tokens": 20
+                }
+                
+                try:
+                    response = await client.chat.completions.create(**kwargs)
+                except Exception as e:
+                    # Robust retry for newer reasoning models (e.g. o1)
+                    retry_needed = False
+                    err_str = str(e).lower()
+                    
+                    if "max_tokens" in err_str and "supported" in err_str:
+                        kwargs.pop("max_tokens", None)
+                        kwargs["max_completion_tokens"] = 20
+                        retry_needed = True
+                        
+                    if "temperature" in err_str and ("supported" in err_str or "value" in err_str):
+                        kwargs["temperature"] = 1.0
+                        retry_needed = True
+                        
+                    if retry_needed:
+                        response = await client.chat.completions.create(**kwargs)
+                    else:
+                        raise e
+
                 intent_raw = response.choices[0].message.content.strip().upper()
             elif provider == "anthropic":
                 response = await client.messages.create(
@@ -392,13 +426,13 @@ class GenAIBrain:
             
             for key, val in mapping.items():
                 if key in intent_raw:
-                    return val
+                    return val, {}
             
-            return "CHAT" if "CHAT" in intent_raw else "PLAN"
+            return ("CHAT", {}) if "CHAT" in intent_raw else ("PLAN", {})
 
         except Exception as e:
             print(f"[Brain] Intent classification failed: {e}")
-            return "PLAN"
+            return "PLAN", {}
 
     def _get_default_provider_and_model(self) -> tuple[str, str]:
         """Recursive fallback for defaults."""

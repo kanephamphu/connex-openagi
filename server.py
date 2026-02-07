@@ -282,9 +282,23 @@ async def get_system_config():
     
     # Return everything from config object
     # Mask secrets
+    from dataclasses import fields
+    
+    # Filter only defined dataclass fields to avoid runtime objects (managers, etc.)
+    allowed_keys = {f.name for f in fields(AGIConfig)}
+    
     raw_config = current_config.__dict__.copy()
     masked_config = {}
     for k, v in raw_config.items():
+        # Skip runtime injections
+        if k not in allowed_keys:
+            continue
+
+        # Skip internal callbacks/complex objects that are not serializable
+        if callable(v) or k == "on_speak_callback":
+            masked_config[k] = str(v) if v else None
+            continue
+            
         if "api_key" in k or "token" in k or "secret" in k:
             if v:
                 masked_config[k] = f"***{str(v)[-4:]}"
