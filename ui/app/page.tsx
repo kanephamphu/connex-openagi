@@ -137,11 +137,22 @@ export default function AGIChatPage() {
                     traceContent = `Completed: ${eventData.action_id}`
                     const output = eventData.output
                     if (output) {
-                      const res = output.reply || output.response || output.result || output.text || (typeof output === 'string' ? output : null)
+                      const res = output.reply || output.response || output.result || output.text || output.analysis || output.summary || output.report || (typeof output === 'string' ? output : null)
                       if (res) lastMsg.content = res
                     }
                   } else if (data.type === "execution_completed") {
                     traceContent = "Execution finished."
+                    const finalOutput = eventData.final_output
+                    if (finalOutput) {
+                      const res = finalOutput.reply || finalOutput.response || finalOutput.result || finalOutput.text || finalOutput.analysis || finalOutput.summary || finalOutput.report || (typeof finalOutput === 'string' ? finalOutput : null)
+
+                      if (res) {
+                        lastMsg.content = res
+                      } else if (typeof finalOutput === 'object' && Object.keys(finalOutput).length > 0) {
+                        // Fallback: Display the raw output if we can't find a specific text field
+                        lastMsg.content = "```json\n" + JSON.stringify(finalOutput, null, 2) + "\n```"
+                      }
+                    }
                   }
                 }
 

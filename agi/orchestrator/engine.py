@@ -697,9 +697,16 @@ class Orchestrator:
                         "schema": e.schema
                     }
                     return
+        # Get final output (from last action)
+        final_output = {}
+        if state.completed:
+            last_action_id = state.completed[-1]
+            final_output = state.results[last_action_id].output
+
         yield {
             "type": "execution_completed",
             "success": len(state.failed) == 0,
             "completed": len(state.completed),
-            "failed": len(state.failed)
+            "failed": len(state.failed),
+            "final_output": final_output
         }
