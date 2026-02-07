@@ -20,6 +20,20 @@ class DatabaseManager:
         """Initialize core tables."""
         conn = self._get_connection()
         cursor = conn.cursor()
+
+        # Perception Requests (Discovery/Acquisition)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS perception_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query TEXT NOT NULL,
+                status TEXT DEFAULT 'pending', -- pending, found_remote, created, failed
+                count INTEGER DEFAULT 1,
+                last_requested TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(query)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_perception_requests_query ON perception_requests(query)")
+
         
         # Perceptions Table
         cursor.execute("""
@@ -53,6 +67,66 @@ class DatabaseManager:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Skill Execution Logs Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS skill_execution_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_name TEXT,
+                status TEXT,
+                input TEXT,
+                output TEXT,
+                error TEXT,
+                duration REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Index for faster time-based queries
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_logs_created_at ON skill_execution_logs(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_logs_skill_name ON skill_execution_logs(skill_name)")
+
+        # Skill Requests Table (for tracking missing skills)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS skill_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query TEXT,
+                status TEXT DEFAULT 'pending', 
+                count INTEGER DEFAULT 1,
+                last_requested TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_requests_query ON skill_requests(query)")
+
+        # Perception Execution Logs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS perception_execution_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                input TEXT,
+                output TEXT,
+                error TEXT,
+                duration REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_perception_logs_created_at ON perception_execution_logs(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_perception_logs_name ON perception_execution_logs(name)")
+
+        # Reflex Execution Logs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reflex_execution_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                input TEXT,
+                output TEXT,
+                error TEXT,
+                duration REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reflex_logs_created_at ON reflex_execution_logs(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reflex_logs_name ON reflex_execution_logs(name)")
 
         # Check if embedding column exists (migration)
         cursor.execute("PRAGMA table_info(perceptions)")
@@ -360,3 +434,281 @@ class DatabaseManager:
             except:
                 info[key] = val_str
         return info
+        return info
+
+    # --- Skill Execution Logging Methods ---
+
+    def log_skill_execution(self, skill_name: str, status: str, input_data: Any, output_data: Any, error: Optional[str], duration: float):
+        """Log a skill execution."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        input_json = json.dumps(input_data, default=str)
+        output_json = json.dumps(output_data, default=str)
+        
+        cursor.execute("""
+            INSERT INTO skill_execution_logs (skill_name, status, input, output, error, duration)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (skill_name, status, input_json, output_json, error, duration))
+        
+        conn.commit()
+        conn.close()
+
+    def get_skill_logs(self, skill_name: Optional[str] = None, limit: int = 50, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get skill execution logs, optionally filtered."""
+        import json
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM skill_execution_logs"
+        params = []
+        conditions = []
+        
+        if skill_name:
+            conditions.append("skill_name = ?")
+            params.append(skill_name)
+            
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+            
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+            
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            d = dict(row)
+            # Parse JSON fields
+            try: d['input'] = json.loads(d['input'])
+            except: pass
+            try: d['output'] = json.loads(d['output'])
+            except: pass
+            results.append(d)
+            
+        return results
+
+    def log_skill_request(self, query: str, status: str = "pending"):
+        """Log a request for a skill (usually one that was missing)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT id, count FROM skill_requests WHERE query = ?", (query,))
+        row = cursor.fetchone()
+        
+        if row:
+            # Update count and timestamp
+            cursor.execute("""
+                UPDATE skill_requests 
+                SET count = count + 1, last_requested = CURRENT_TIMESTAMP, status = ?
+                WHERE id = ?
+            """, (status, row[0]))
+        else:
+            # Insert new
+            cursor.execute("""
+                INSERT INTO skill_requests (query, status) VALUES (?, ?)
+            """, (query, status))
+            
+        conn.commit()
+        conn.close()
+
+    def get_pending_skill_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get pending skill requests, sorted by count (demand) descending."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM skill_requests 
+            WHERE status = 'pending'
+            ORDER BY count DESC, last_requested DESC
+            LIMIT ?
+        """, (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+
+
+
+        return [dict(row) for row in rows]
+
+    # --- Comprehensive Logging Methods ---
+
+    def log_perception_execution(self, name: str, input_data: Any, output_data: Any, error: Optional[str], duration: float):
+        """Log a perception execution."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        input_json = json.dumps(input_data, default=str)
+        output_json = json.dumps(output_data, default=str)
+        
+        cursor.execute("""
+            INSERT INTO perception_execution_logs (name, input, output, error, duration)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, input_json, output_json, error, duration))
+        
+        conn.commit()
+        conn.close()
+
+    def log_reflex_execution(self, name: str, input_data: Any, output_data: Any, error: Optional[str], duration: float):
+        """Log a reflex execution."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        input_json = json.dumps(input_data, default=str)
+        output_json = json.dumps(output_data, default=str)
+        
+        cursor.execute("""
+            INSERT INTO reflex_execution_logs (name, input, output, error, duration)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, input_json, output_json, error, duration))
+        
+        conn.commit()
+        conn.close()
+
+    def get_component_logs(self, type: str, name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get execution logs for a component (skill, perception, reflex).
+        """
+        import json
+        table_map = {
+            "skill": "skill_execution_logs",
+            "perception": "perception_execution_logs",
+            "reflex": "reflex_execution_logs"
+        }
+        
+        table = table_map.get(type)
+        if not table:
+            return []
+            
+        col_name = "skill_name" if type == "skill" else "name"
+            
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute(f"""
+            SELECT * FROM {table} 
+            WHERE {col_name} = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (name, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            d = dict(row)
+            try: d['input'] = json.loads(d['input'])
+            except: pass
+            try: d['output'] = json.loads(d['output'])
+            except: pass
+            results.append(d)
+        return results
+
+    def get_component_stats(self, type: str, name: str) -> Dict[str, Any]:
+        """
+        Get statistics for a component.
+        """
+        table_map = {
+            "skill": "skill_execution_logs",
+            "perception": "perception_execution_logs",
+            "reflex": "reflex_execution_logs"
+        }
+        
+        table = table_map.get(type)
+        if not table:
+            return {}
+            
+        col_name = "skill_name" if type == "skill" else "name"
+        status_check = "status = 'success'" if type == "skill" else "error IS NULL"
+        
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # 1. Total Runs
+        cursor.execute(f"SELECT count(*) FROM {table} WHERE {col_name} = ?", (name,))
+        total_runs = cursor.fetchone()[0]
+        
+        if total_runs == 0:
+            conn.close()
+            return {"total_runs": 0, "success_rate": 0, "avg_duration": 0, "last_run": None}
+
+        # 2. Success Count
+        cursor.execute(f"SELECT count(*) FROM {table} WHERE {col_name} = ? AND {status_check}", (name,))
+        success_count = cursor.fetchone()[0]
+        
+        # 3. Avg Duration
+        cursor.execute(f"SELECT avg(duration) FROM {table} WHERE {col_name} = ?", (name,))
+        avg_duration = cursor.fetchone()[0] or 0.0
+        
+        # 4. Last Run
+        cursor.execute(f"SELECT created_at FROM {table} WHERE {col_name} = ? ORDER BY created_at DESC LIMIT 1", (name,))
+        last_run = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            "total_runs": total_runs,
+            "success_rate": (success_count / total_runs) * 100 if total_runs > 0 else 0,
+            "avg_duration": avg_duration * 1000, # Convert to ms
+            "last_run": last_run
+        }
+
+    def log_perception_request(self, query: str, status: str = "pending"):
+        """Log a missing perception request."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT id, count FROM perception_requests WHERE query = ?", (query,))
+        row = cursor.fetchone()
+        
+        if row:
+            # Update
+            cursor.execute("""
+                UPDATE perception_requests 
+                SET count = count + 1, last_requested = CURRENT_TIMESTAMP, status = ?
+                WHERE id = ?
+            """, (status, row[0]))
+        else:
+            # Insert new
+            cursor.execute("""
+                INSERT INTO perception_requests (query, status) VALUES (?, ?)
+            """, (query, status))
+            
+        conn.commit()
+        conn.close()
+
+    def get_pending_perception_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get pending perception requests."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM perception_requests 
+            WHERE status = 'pending'
+            ORDER BY count DESC
+            LIMIT ?
+        """, (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+

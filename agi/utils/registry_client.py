@@ -99,3 +99,26 @@ class RegistryClient:
                 f.write(content)
                 
         return install_dir
+        return install_dir
+
+    async def report_error(self, skill_name: str, error_msg: str, context: Optional[Dict] = None):
+        """
+        Report a skill execution error to the registry.
+        """
+        url = f"{self.config.registry_url}/skills/{skill_name}/errors"
+        headers = {}
+        if self.config.connex_auth_token:
+            headers["Authorization"] = f"Bearer {self.config.connex_auth_token}"
+            
+        payload = {
+            "error": error_msg,
+            "context": context or {}
+        }
+            
+        try:
+            async with httpx.AsyncClient() as client:
+                # Fire and forget - don't wait long or throw
+                await client.post(url, json=payload, headers=headers, timeout=5)
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[RegistryClient] Failed to report error for {skill_name}: {e}")

@@ -10,53 +10,87 @@ Connex AGI is designed to mimic a biological brain, separating fast reactions fr
 
 ```mermaid
 graph TD
-    User([User Intent]) --> Perception
-    User --> Reflex
+    %% Define Nodes with Icons
+    User(["👤 User Intent"])
     
-    subgraph Senses["Tier Peer Layer (Senses & Reactions)"]
-        Perception["Perception Layer"]
-        Reflex["Reflex Layer"]
+    subgraph Senses["👁️ TIER PEER (SENSES & REACTIONS)"]
+        Perception(["👁️ Perception Layer"])
+        Reflex(["⚡ Reflex Layer"])
     end
     
-    subgraph Accelerator["Parallel Engine (Tier 8)"]
-        SubBrain{{"Sub-Brain System"}}
+    subgraph Accelerator["🚀 TIER 8 (PARALLEL ENGINE)"]
+        SubBrain{{"🧠 Sub-Brain System<br/>(Local SmolLM)"}}
     end
     
-    Perception <--> SubBrain
-    Orchestrator <--> SubBrain
+    subgraph Core["🧠 CORE BRAIN (REASONING)"]
+        Planner[["🏗️ Tier 1: Planner"]]
+        Orchestrator[["⚙️ Tier 2: Orchestrator"]]
+    end
 
-    Perception --> Planner
-    Reflex --> Orchestrator
-    
-    subgraph Core["Core Reasoning (Tier 1 & 2)"]
-        Planner["Planner / Tier 1"]
-        Orchestrator["Orchestrator / Tier 2"]
-        Corrector["Self-Correction / Immune System"]
+    subgraph World["🌍 TIER 5 (WORLD COGNITION)"]
+        WorldLayer[["🌍 World Layer / Causality"]]
     end
     
-    Planner -- Action DAG --> Orchestrator
-    Orchestrator -- Error Feedback --> Corrector
-    Corrector -- Patch --> Orchestrator
-    
-    subgraph Execution["Workers (Tier 3)"]
-        SkillDock["SkillDock"]
+    subgraph Workers["🛠️ TIER 3 (EXECUTION)"]
+        SkillDock["🔧 SkillDock / Workers"]
     end
     
-    Orchestrator -- Call --> SkillDock
-    SkillDock -- Result --> Orchestrator
-    
-    subgraph Evolution["Self-Evolution (Tier 4)"]
-        Motivation["Motivation System"]
-        Memory["Memory System"]
+    subgraph Evolution["🌱 TIER 4 (SELF-EVOLUTION)"]
+        Motivation["📈 Motivation System"]
+        Memory["💾 Tier 6: Memory System"]
     end
+
+    subgraph Community["🌐 TIER 10 (HIVE MIND)"]
+        Registry{{"Remote Registry"}}
+    end
+
+    %% Flow Connections
+    User -->|Goal| Perception
+    User -->|Trigger| Reflex
     
-    Orchestrator -- Logs/Trace --> Motivation
-    Orchestrator -- Conversation --> Memory
-    Motivation -- Proposal --> Planner
-    Memory -- Recall --> Planner
-    Motivation -- Skill Acquisition --> SkillDock
+    Perception <-->|Fast Data| SubBrain
+    Orchestrator <-->|Offload| SubBrain
+
+    Perception -->|Context| Planner
+    Reflex -->|Automated Plan| Orchestrator
+
+    Perception -.->|Grounding| WorldLayer
     
-    style SubBrain fill:#f9f,stroke:#333,stroke-width:2px
+    Planner -->|Action DAG| Orchestrator
+    Orchestrator <-->|Causality Check| WorldLayer
+    Orchestrator -->|Skill Call| SkillDock
+    SkillDock -->|Result| Orchestrator
+    
+    Orchestrator -->|Trace| Motivation
+    Orchestrator -->|History| Memory
+    Motivation -.->|Learn| Planner
+    Memory -.->|Recall| Planner
+
+    %% Registry Connections
+    Registry <-->|Install| SkillDock
+    Registry <-->|Install| Perception
+    Registry <-->|Install| Reflex
+    Motivation -.->|Discover| Registry
+
+    %% Professional Styling
+    style User fill:#fff,stroke:#333,stroke-width:2px
+    style Perception fill:#e0f7fa,stroke:#00acc1,stroke-width:2px
+    style Reflex fill:#ffebee,stroke:#e53935,stroke-width:2px
+    style SubBrain fill:#f3e5f5,stroke:#8e24aa,stroke-width:3px,color:#4a148c
+    style Planner fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
+    style Orchestrator fill:#e8f5e9,stroke:#43a047,stroke-width:2px
+    style WorldLayer fill:#fff8e1,stroke:#fbc02d,stroke-width:2px
+    style SkillDock fill:#f1f8e9,stroke:#7cb342,stroke-width:2px
+    style Motivation fill:#fff3e0,stroke:#fb8c00,stroke-width:2px
+    style Memory fill:#fff8e1,stroke:#ffb300,stroke-width:2px
+    style Registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,stroke-dasharray: 5 5
+
+    %% Subgraph Styling
+    style Senses fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Core fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Evolution fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Workers fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Community fill:transparent,stroke:#999,stroke-dasharray: 5 5
 ```
 
 ## Layer Descriptions
@@ -110,7 +144,16 @@ graph TD
 - **Mechanism**: SQLite-backed Vector DB.
 - **Function**: Provides semantic recall of past interactions and daily experience summarization.
 
-### 8. Sub-Brain System (Tier 8)
+### 9. Sub-Brain System (Tier 8)
 - **Role**: Local Acceleration & Parallelization.
 - **Mechanism**: Distributed local LLM hosts (e.g., SmolLM-135M-Instruct).
 - **Function**: Offloads intensive but straightforward tasks like emotion detection, formatting, or intent classification from the main Brain, allowing for faster response times and improved privacy.
+
+### 10. The Connex Registry (Tier 10)
+- **Role**: The Hive Mind / Collective Knowledge.
+- **Mechanism**: A centralized, remote repository of Skills, Perceptions, and Reflexes.
+- **Function**:
+    - **Discovery**: Enables AGIs to find new capabilities they lack.
+    - **Federated Learning**: Aggregates successful skills and patterns from thousands of AGIs.
+    - **Auto-Recovery**: Provides a fallback source for missing dependencies or failed plans.
+- **Interconnectivity**: Allows this AGI to connect with other AGI servers to form a distributed intelligence network.

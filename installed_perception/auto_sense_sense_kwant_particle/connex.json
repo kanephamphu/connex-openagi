@@ -1,0 +1,5 @@
+{
+  "name": "auto_sense_sense_kwant_particle",
+  "type": "perception",
+  "main": "system.py"
+}

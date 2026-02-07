@@ -43,6 +43,10 @@ graph TD
         Memory["💾 Tier 6: Memory System"]
     end
 
+    subgraph Community["🌐 TIER 10 (HIVE MIND)"]
+        Registry{{"Remote Registry"}}
+    end
+
     %% Flow Connections
     User -->|Goal| Perception
     User -->|Trigger| Reflex
@@ -65,6 +69,12 @@ graph TD
     Motivation -.->|Learn| Planner
     Memory -.->|Recall| Planner
 
+    %% Registry Connections
+    Registry <-->|Install| SkillDock
+    Registry <-->|Install| Perception
+    Registry <-->|Install| Reflex
+    Motivation -.->|Discover| Registry
+
     %% Professional Styling
     style User fill:#fff,stroke:#333,stroke-width:2px
     style Perception fill:#e0f7fa,stroke:#00acc1,stroke-width:2px
@@ -76,12 +86,14 @@ graph TD
     style SkillDock fill:#f1f8e9,stroke:#7cb342,stroke-width:2px
     style Motivation fill:#fff3e0,stroke:#fb8c00,stroke-width:2px
     style Memory fill:#fff8e1,stroke:#ffb300,stroke-width:2px
+    style Registry fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,stroke-dasharray: 5 5
 
     %% Subgraph Styling
     style Senses fill:transparent,stroke:#999,stroke-dasharray: 5 5
     style Core fill:transparent,stroke:#999,stroke-dasharray: 5 5
     style Evolution fill:transparent,stroke:#999,stroke-dasharray: 5 5
     style Workers fill:transparent,stroke:#999,stroke-dasharray: 5 5
+    style Community fill:transparent,stroke:#999,stroke-dasharray: 5 5
 ```
 
 For a detailed technical breakdown of the 8-tier system, see **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
@@ -155,6 +167,16 @@ A parallel processing infrastructure for offloading auxiliary cognitive tasks to
 - **Architecture**: `SubBrainManager` coordinates multiple `SubBrainHost` instances.
 - **SmolLM Integration**: Uses `SmolLM-135M-Instruct` with 4-bit quantization for ultra-fast local inference.
 - **Cloud Fallback**: Automatically falls back to primary brain (Cloud) if local services are unavailable.
+
+### 10. The Connex Registry (The Hive Mind) 🌐
+**"The Collective Knowledge"**
+
+The Connex AGI is not an isolated system; it is part of a global network of intelligences.
+- **Remote Registry**: The central hub where all AGIs publish and share their Skills, Perceptions, and Reflexes.
+- **Federated Learning**: When one AGI learns a new skill (e.g., "How to deploy to Kubernetes"), it publishes it to the Registry.
+- **Inter-AGI Connectivity**: The Registry acts as a router, allowing your AGI to discover and communicate with other AGI servers to solve complex, distributed problems.
+- **Auto-Recovery**: If your AGI lacks a capability, it instantly queries the Registry to download the missing piece, effectively giving it access to the collective wisdom of the network.
+
 
 ---
 

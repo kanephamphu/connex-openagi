@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Loader2, Settings } from "lucide-react"
+import { Loader2, Settings, Activity } from "lucide-react"
 
 // Components
 import { ChatHeader } from "@/components/chat/ChatHeader"
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen"
 import { ChatMessage, Message, TraceStep } from "@/components/chat/ChatMessage"
 import { ChatInput } from "@/components/chat/ChatInput"
+import { MotivationSettings } from "@/components/chat/MotivationSettings"
 
 export default function AGIChatPage() {
   const [prompt, setPrompt] = React.useState("")
@@ -22,6 +23,8 @@ export default function AGIChatPage() {
   const [configValues, setConfigValues] = React.useState<Record<string, string>>({})
   const [earActive, setEarActive] = React.useState(false)
   const [messages, setMessages] = React.useState<Message[]>([])
+  const [showMotivationSettings, setShowMotivationSettings] = React.useState(false)
+  const [systemConfig, setSystemConfig] = React.useState<Record<string, any>>({})
 
   const scrollAreaRef = React.useRef<HTMLDivElement>(null)
 
@@ -33,7 +36,11 @@ export default function AGIChatPage() {
   }, [messages])
 
   // Polling sensor status
+  // Polling sensor status
   React.useEffect(() => {
+    // Load config on mount
+    fetch("/api/config").then(res => res.json()).then(data => setSystemConfig(data.config)).catch(console.error);
+
     const checkStatus = async () => {
       try {
         const res = await fetch("/health")
@@ -220,6 +227,25 @@ export default function AGIChatPage() {
     }
   };
 
+  const handleMotivationSave = async (newConfig: Record<string, any>) => {
+    try {
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: newConfig })
+      });
+      if (res.ok) {
+        setSystemConfig(prev => ({ ...prev, ...newConfig }));
+        setShowMotivationSettings(false);
+        setMessages(prev => [...prev, { role: "assistant", content: "Motivation settings updated successfully." }]);
+      }
+    } catch (e) {
+      console.error("Failed to save config", e);
+    }
+  };
+
+
+
   return (
     <div className="flex h-screen bg-[#0f0f12] text-white font-sans overflow-hidden selection:bg-purple-500/30">
 
@@ -231,6 +257,16 @@ export default function AGIChatPage() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col items-center justify-center relative z-10 w-full max-w-6xl mx-auto px-4 lg:px-6">
+
+        <div className="absolute top-4 right-4 z-50">
+          <button
+            onClick={() => setShowMotivationSettings(true)}
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors text-white/60 hover:text-white"
+            title="Motivation Settings"
+          >
+            <Activity className="w-5 h-5" />
+          </button>
+        </div>
 
         <ChatHeader
           earActive={earActive}
@@ -331,6 +367,14 @@ export default function AGIChatPage() {
             onSubmit={handleSubmit}
           />
         </div>
+
+        {showMotivationSettings && (
+          <MotivationSettings
+            config={systemConfig}
+            onSave={handleMotivationSave}
+            onClose={() => setShowMotivationSettings(false)}
+          />
+        )}
 
       </main>
     </div>

@@ -68,13 +68,24 @@ class ReflexLayer:
         """
         triggered_plans = []
         
+        # Lazy load DB to avoid circular imports if any
+        from agi.utils.database import DatabaseManager
+        db = DatabaseManager()
+        
+        import time
+        
         for name, reflex in self._reflexes.items():
             if not reflex.active:
                 continue
                 
+            start_time = time.time()
+            error = None
+            triggered = False
+            
             try:
                 should_trigger = await reflex.evaluate(event)
                 if should_trigger:
+                    triggered = True
                     if self.config.verbose:
                         print(f"[Reflex] Triggered: {name}")
                     plan_data = await reflex.get_plan()
@@ -92,7 +103,23 @@ class ReflexLayer:
                         "plan": plan
                     })
             except Exception as e:
+                error = str(e)
                 print(f"[Reflex] Error evaluating {name}: {e}")
+            finally:
+                duration = time.time() - start_time
+                # Only log if triggered or error, to avoid spamming logs for every event eval?
+                # Actually, evaluating every reflex for every event is high volume.
+                # Let's log if triggered OR error.
+                if triggered or error:
+                    try:
+                        db.log_reflex_execution(
+                            name=name,
+                            input_data=event,
+                            output_data={"triggered": triggered, "plan_count": 1 if triggered else 0},
+                            error=error,
+                            duration=duration
+                        )
+                    except: pass
                 
         return triggered_plans
 

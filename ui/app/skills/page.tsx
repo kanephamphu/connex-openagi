@@ -117,9 +117,11 @@ export default function SkillsPage() {
                         >
                             <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <h3 className="text-xl font-semibold bg-gradient-to-br from-white to-neutral-400 bg-clip-text text-transparent">
-                                        {skill.name}
-                                    </h3>
+                                    <Link href={`/skills/${encodeURIComponent(skill.name)}`}>
+                                        <h3 className="text-xl font-semibold bg-gradient-to-br from-white to-neutral-400 bg-clip-text text-transparent hover:text-blue-400 transition-colors cursor-pointer">
+                                            {skill.name}
+                                        </h3>
+                                    </Link>
                                     {!skill.is_configured && (
                                         <div className="flex items-center gap-1 text-amber-500 text-[10px] mt-1">
                                             <span>⚠️ Config Required</span>

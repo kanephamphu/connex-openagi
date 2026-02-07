@@ -4,7 +4,9 @@ Skill registry for discovering and managing skills.
 
 from typing import Dict, List, Optional, Any
 from agi.skilldock.base import Skill, SkillMetadata
+from agi.skilldock.base import Skill, SkillMetadata
 from agi.utils.registry_client import RegistryClient
+from agi.utils.database import DatabaseManager
 
 
 class SkillRegistry:
@@ -28,7 +30,9 @@ class SkillRegistry:
         from agi.skilldock.store import SkillStore
         import os
         db_path = os.path.join(self.config.skills_storage_path, "skills.db")
+        db_path = os.path.join(self.config.skills_storage_path, "skills.db")
         self.store = SkillStore(db_path)
+        self.db = DatabaseManager()
         self.registry_client = RegistryClient(self.config)
         
         self._load_builtin_skills()
@@ -335,7 +339,7 @@ class SkillRegistry:
             
         return selected
 
-    def search_skills_by_name(self, query: str, limit: int = 5) -> List[Skill]:
+    def search_skills_by_name(self, query: str, limit: int = 2) -> List[Skill]:
         """
         Search for skills using fuzzy matching on name and description.
         Returns skills ranked by relevance.
@@ -378,13 +382,99 @@ class SkillRegistry:
             
             total_score = name_score + desc_score
             
-            if total_score > 0.7:  # Lower threshold for more matches
+            if total_score > 0.8:  # Lower threshold for more matches
                 scored_results.append((total_score, skill))
         
         # Sort by score descending
         scored_results.sort(key=lambda x: x[0], reverse=True)
         
         return [skill for _, skill in scored_results[:limit]]
+
+    async def find_or_create_skill(self, query: str) -> List[Skill]:
+        """
+        Find a skill by name/description. 
+        If not found locally, attempt to find remotely or create it.
+        
+        Args:
+            query: Capability description or skill name
+            
+        Returns:
+            List of matching Skills (usually 1 if created/downloaded)
+        """
+        # 1. Local Search (Fast)
+        local_results = self.search_skills_by_name(query)
+        if local_results:
+            return local_results
+            
+        if self.config.verbose:
+            print(f"[SkillRegistry] '{query}' not found locally. Initiating Auto-Recovery...")
+            
+        # Log the miss
+        self.db.log_skill_request(query, status="pending")
+        
+        # 2. Remote Search
+        try:
+            remote_results = await self.registry_client.search("skill", query, limit=1)
+            if remote_results:
+                best = remote_results[0]
+                scoped_name = best.get("scopedName") or best.get("name")
+                
+                if self.config.verbose:
+                    print(f"[SkillRegistry] Found remote skill '{scoped_name}'. Downloading...")
+                
+                # Download & Install
+                success = await self.install_skill(scoped_name)
+                if success:
+                    # Update status
+                    self.db.log_skill_request(query, status="found_remote")
+                    # Retrieve the newly installed skill
+                    # We might need to reload or just search again
+                    # Since install_skill registers it, it should be in self._skills now
+                    # But we need to know its local name. Usually matches scoped_name key.
+                    # Or we just search again using the query which should now match.
+                    return self.search_skills_by_name(query) or self.search_skills_by_name(scoped_name)
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[SkillRegistry] Remote search failed: {e}")
+
+        # 3. Auto-Creation (Skill Acquisition)
+        try:
+            if self.config.verbose:
+                print(f"[SkillRegistry] Remote search yielded nothing. Triggering Skill Acquisition for '{query}'...")
+            
+            # We need to use the SkillAcquisitionSkill
+            # Check if it exists (it should, as a meta skill)
+            # If not, we are in trouble (meta-recursion?), but let's assume it's loaded.
+            
+            acq_skill_name = "skill_acquisition"
+            if acq_skill_name in self._skills:
+                acq_skill = self._skills[acq_skill_name]
+                
+                # Execute it
+                result = await acq_skill.execute(requirement=query)
+                
+                if result.get("success"):
+                    new_skill_name = result.get("skill_name")
+                    if self.config.verbose:
+                        print(f"[SkillRegistry] Successfully created skill '{new_skill_name}'. Loading...")
+                    
+                    # It was saved to storage, so we need to load it
+                    import os
+                    skill_dir = os.path.join(self.config.skills_storage_path, new_skill_name)
+                    if self._load_dynamic_skill(skill_dir):
+                        self.db.log_skill_request(query, status="created")
+                        return [self._skills[new_skill_name]] if new_skill_name in self._skills else []
+                else:
+                    if self.config.verbose:
+                         print(f"[SkillRegistry] Skill creation failed: {result.get('message')}")
+                         self.db.log_skill_request(query, status="failed")
+
+        except Exception as e:
+             if self.config.verbose:
+                print(f"[SkillRegistry] Auto-creation failed: {e}")
+                self.db.log_skill_request(query, status="failed")
+                
+        return []
 
     def _sync_to_store(self):
         """Sync loaded skills metadata to SQLite."""

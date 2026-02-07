@@ -80,6 +80,11 @@ class AGIConfig:
     reflex_storage_path: str = "installed_reflex"
     use_external_subbrain: bool = False # Flag to toggle external subbrain usage
     
+    # Motivation / Background Recovery
+    motivation_interval: int = 3600 # Run every hour by default
+    skill_review_min_rating: float = 4.0
+    skill_review_min_downloads: int = 100
+    
     @classmethod
     def from_env(cls) -> "AGIConfig":
         """
@@ -124,6 +129,10 @@ class AGIConfig:
             sub_brain_provider=os.getenv("AGI_SUB_BRAIN_PROVIDER", "openai"),
             max_history=int(os.getenv("AGI_MAX_HISTORY", "10")),
             speak_output=os.getenv("AGI_SPEAK_OUTPUT", "false").lower() == "true",
+            
+            motivation_interval=int(os.getenv("AGI_MOTIVATION_INTERVAL", "3600")),
+            skill_review_min_rating=float(os.getenv("AGI_SKILL_REVIEW_MIN_RATING", "4.0")),
+            skill_review_min_downloads=int(os.getenv("AGI_SKILL_REVIEW_MIN_DOWNLOADS", "100")),
         )
         
         # Load overlays from Database

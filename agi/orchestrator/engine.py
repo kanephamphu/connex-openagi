@@ -57,7 +57,10 @@ class Orchestrator:
         """
         self.config = config
         self.skill_registry = skill_registry
+        self.skill_registry = skill_registry
         self.mapper = IOMapper()
+        from agi.utils.database import DatabaseManager
+        self.db = DatabaseManager()
         from agi.brain import GenAIBrain
         self.brain = GenAIBrain(config)
         
@@ -441,6 +444,20 @@ class Orchestrator:
             
             duration = time.time() - start_time
             
+            # Log success
+            try:
+                self.db.log_skill_execution(
+                    skill_name=action.skill,
+                    status="success",
+                    input_data=inputs,
+                    output_data=output,
+                    error=None,
+                    duration=duration
+                )
+            except Exception as log_err:
+                if self.config.verbose:
+                    print(f"[Orchestrator] Logging failed: {log_err}")
+
             return StepResult(
                 action_id=action.id,
                 success=True,
@@ -453,6 +470,30 @@ class Orchestrator:
             )
         except Exception as e:
             duration = time.time() - start_time
+            # Log failure
+            try:
+                self.db.log_skill_execution(
+                    skill_name=action.skill,
+                    status="failed",
+                    input_data=inputs,
+                    output_data=None,
+                    error=str(e),
+                    duration=duration
+                )
+            except Exception as log_err:
+                if self.config.verbose:
+                    print(f"[Orchestrator] Logging failed: {log_err}")
+
+            # Report to Remote Registry (Community Feedback)
+            try:
+                await self.skill_registry.registry_client.report_error(
+                    skill_name=action.skill,
+                    error_msg=str(e),
+                    context={"inputs": inputs}
+                )
+            except:
+                pass
+
             return StepResult(
                 action_id=action.id,
                 success=False,

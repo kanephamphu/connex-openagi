@@ -169,6 +169,9 @@ class AGI:
             if self.config.verbose:
                 print(f"[AGI] Could not start Time sensor: {e}")
 
+        # Start Motivation Background Loop
+        asyncio.create_task(self.motivation.start_background_loop())
+
         if self.config.verbose:
             print("[AGI] Initialization complete.")
 
@@ -415,11 +418,11 @@ class AGI:
                 if self.config.verbose:
                     print(f"[AGI] Reasoning complete. Required capabilities: {required_capabilities}")
                 
-                # Step 2: Match Skills from Registry
+                # Step 2: Match Skills from Registry (with Auto-Recovery)
                 matched_skills = []
                 for capability in required_capabilities:
-                    # Fuzzy search for matching skills
-                    found_skills = self.skill_registry.search_skills_by_name(capability, limit=2)
+                    # Async Find/Create
+                    found_skills = await self.skill_registry.find_or_create_skill(capability)
                     matched_skills.extend(found_skills)
                 
                 # Deduplicate while preserving order

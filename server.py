@@ -264,6 +264,90 @@ async def list_reflex_modules():
     return {"modules": modules}
 
 
+
+@app.get("/api/skills/{name}")
+async def get_skill_details(name: str):
+    """Get detailed info, stats, and logs for a skill."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    try:
+        skill = agi_instance.skill_registry.get_skill(name)
+        metadata = skill.metadata.to_dict()
+        
+        # Get Stats & Logs
+        from agi.utils.database import DatabaseManager
+        db = DatabaseManager()
+        stats = db.get_component_stats("skill", name)
+        logs = db.get_component_logs("skill", name, limit=50)
+        
+        return {
+            "metadata": metadata,
+            "stats": stats,
+            "logs": logs
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Skill not found: {e}")
+
+@app.get("/api/perception/{name}/details")
+async def get_perception_details(name: str):
+    """Get detailed info, stats, and logs for a perception module."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    module = agi_instance.perception.get_module(name)
+    if not module:
+        raise HTTPException(status_code=404, detail="Perception module not found")
+        
+    metadata = {
+        "name": module.metadata.name,
+        "description": module.metadata.description,
+        "version": module.metadata.version,
+        "type": "perception"
+    }
+    
+    # Get Stats & Logs
+    from agi.utils.database import DatabaseManager
+    db = DatabaseManager()
+    stats = db.get_component_stats("perception", name)
+    logs = db.get_component_logs("perception", name, limit=50)
+    
+    return {
+        "metadata": metadata,
+        "stats": stats,
+        "logs": logs
+    }
+
+@app.get("/api/reflex/{name}/details")
+async def get_reflex_details(name: str):
+    """Get detailed info, stats, and logs for a reflex module."""
+    if not agi_instance:
+         raise HTTPException(status_code=503, detail="AGI not initialized")
+    
+    reflex = agi_instance.reflex._reflexes.get(name)
+    if not reflex:
+        raise HTTPException(status_code=404, detail="Reflex module not found")
+        
+    metadata = {
+        "name": reflex.metadata.name,
+        "description": reflex.metadata.description,
+        "version": reflex.metadata.version,
+        "type": reflex.metadata.type,
+        "active": reflex.active
+    }
+    
+    # Get Stats & Logs
+    from agi.utils.database import DatabaseManager
+    db = DatabaseManager()
+    stats = db.get_component_stats("reflex", name)
+    logs = db.get_component_logs("reflex", name, limit=50)
+    
+    return {
+        "metadata": metadata,
+        "stats": stats,
+        "logs": logs
+    }
+
 @app.get("/api/config")
 async def get_system_config():
     """Get current system configuration."""

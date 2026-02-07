@@ -28,6 +28,8 @@ class PerceptionLayer:
         
     async def initialize(self, memory_manager=None, skill_registry=None, identity_manager=None):
         """Initialize all registered perception modules with robustness."""
+        self.skill_registry = skill_registry
+        
         if not getattr(self.config, 'enable_world_recognition', True):
              if self.config.verbose:
                  print("[Perception] World Recognition Disabled. Skipping module loading.")
@@ -251,29 +253,49 @@ class PerceptionLayer:
         """
         Request perception from a specific module.
         """
-        module = self._modules.get(module_name)
-        if not module:
-            raise ValueError(f"Perception module '{module_name}' not found.")
-            
-        if not module.connected:
-            await module.connect()
-            
-        result = await module.perceive(query, **kwargs)
+        import time
+        start_time = time.time()
+        error = None
+        result = None
         
-        # Push to world grounding hook if registered
-        if self.grounding_callback:
+        try:
+            module = self._modules.get(module_name)
+            if not module:
+                raise ValueError(f"Perception module '{module_name}' not found.")
+                
+            if not module.connected:
+                await module.connect()
+                
+            result = await module.perceive(query, **kwargs)
+            
+            # Push to world grounding hook if registered
+            if self.grounding_callback:
+                try:
+                    # We don't await this to keep perception low-latency, 
+                    # but if the callback is async, we should probably handle it.
+                    if asyncio.iscoroutinefunction(self.grounding_callback):
+                        asyncio.create_task(self.grounding_callback(module_name, result))
+                    else:
+                        self.grounding_callback(module_name, result)
+                except Exception as e:
+                    if self.config.verbose:
+                        print(f"[Perception] ⚠️ Grounding callback failed: {e}")
+            
+            return result
+        except Exception as e:
+            error = str(e)
+            raise e
+        finally:
+            duration = time.time() - start_time
             try:
-                # We don't await this to keep perception low-latency, 
-                # but if the callback is async, we should probably handle it.
-                if asyncio.iscoroutinefunction(self.grounding_callback):
-                    asyncio.create_task(self.grounding_callback(module_name, result))
-                else:
-                    self.grounding_callback(module_name, result)
-            except Exception as e:
-                if self.config.verbose:
-                    print(f"[Perception] ⚠️ Grounding callback failed: {e}")
-                    
-        return result
+                self.db.log_perception_execution(
+                    name=module_name,
+                    input_data={"query": query, "kwargs": kwargs},
+                    output_data=result,
+                    error=error,
+                    duration=duration
+                )
+            except: pass
 
     async def install_module(self, scoped_name: str) -> bool:
         """
@@ -354,3 +376,70 @@ class PerceptionLayer:
     async def search_registry(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search the registry for perception modules."""
         return await self.registry_client.search("perception", query, limit)
+
+    async def find_or_create_perception(self, query: str) -> Optional[str]:
+        """
+        Find a perception module matching the query.
+        If not found locally, try remote registry or auto-creation.
+        
+        Returns:
+            Module Name or None
+        """
+        # 1. Local Search
+        local_sensors = await self.search_sensors(query, limit=1)
+        if local_sensors:
+            return local_sensors[0]
+            
+        if self.config.verbose:
+            print(f"[Perception] '{query}' not found locally. Initiating Discovery...")
+            
+        # Log request
+        self.db.log_perception_request(query, status="pending")
+        
+        # 2. Remote Search & Install
+        try:
+             remote_results = await self.search_registry(query, limit=1)
+             if remote_results:
+                 best = remote_results[0]
+                 scoped_name = best.get("scopedName") or best.get("name")
+                 if await self.install_module(scoped_name):
+                     self.db.log_perception_request(query, status="found_remote")
+                     return scoped_name
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[Perception] Remote search failed: {e}")
+
+        # 3. Auto-Creation via Skill
+        # We need the skill registry to be available
+        if not self.skill_registry:
+            if self.config.verbose:
+                print("[Perception] Skill Registry not available for auto-creation.")
+            return None
+            
+        try:
+            acq_skill = self.skill_registry.get_skill("perception_acquisition")
+            if not acq_skill:
+                return None
+                
+            if self.config.verbose:
+                print(f"[Perception] Triggering Auto-Acquisition for '{query}'...")
+                
+            result = await acq_skill.execute(query=query)
+            
+            if result.get("success"):
+                new_module_name = result.get("module_name")
+                
+                # Load it
+                install_dir = os.path.join(self.modules_path, new_module_name)
+                if self._load_dynamic_module(install_dir):
+                    self.db.log_perception_request(query, status="created")
+                    return new_module_name
+            else:
+                self.db.log_perception_request(query, status="failed")
+                
+        except Exception as e:
+            if self.config.verbose:
+                print(f"[Perception] Auto-creation failed: {e}")
+            self.db.log_perception_request(query, status="failed")
+            
+        return None
