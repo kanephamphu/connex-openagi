@@ -346,39 +346,18 @@ class AGI:
             async for evt in yield_evt({"phase": "planning", "type": "planning_started", "goal": "Analyzing your request..."}):
                 yield evt
             
-            # --- NEW: Reasoning Phase (Inner Monologue) ---
-            if self.config.verbose:
-                print("[AGI] Entering reasoning phase...")
-            
-            # --- Emotion Detection (Parallel via Sub-Brains) ---
-            # asyncio.create_task(self.perception.perceive("emotion", goal))
-            
-            reasoning_content = ""
-            
-            # Inject available skills so the Brain knows what it can do
-            skill_list = [s.name for s in self.skill_registry.list_skills()]
-            reasoning_context = {**(context or {}), "available_skills": skill_list}
-            
-            async for update in self.brain.reason(goal, reasoning_context):
-                if update["type"] == "reasoning_token":
-                    reasoning_content += update["token"]
-                
-                # Capture reasoning updates
-                async for evt in yield_evt({"phase": "planning", **update, "partial_content": reasoning_content}):
-                    yield evt
-
-            if self.config.verbose:
-                print("[AGI] Reasoning complete. Classifying intent...")
-
-            # --- NEW: Working Memory ---
+            # --- NEW: Intent Definition Phase (Optimization) ---
+            # Define Intent BEFORE Reasoning to save tokens if simple Chat
             working_memory = self.memory.get_working_memory()
             emotional_context = self.memory.emotional_state
             
-            # --- Intent Classification ---
+            # Intent Classification
             intent, notable_info_extracted = await self.brain.classify_intent_fast(goal, working_memory, self.sub_brain)
             
-            # Context Merging Strategy:
-            # 1. Start with base context
+            if self.config.verbose:
+                print(f"[AGI] Detected intent: {intent}")
+
+            # Context Merging
             merged_context = {
                 **(context or {}),
                 "conversation_history": working_memory["recent_history"],
@@ -386,29 +365,123 @@ class AGI:
                 **emotional_context
             }
 
-            # 2. Add Notable Info (Selective Fetch)
-            # Merge extracted info. If value is empty, it means we need to fetch from DB.
+            # Add Notable Info (Selective Fetch)
             final_notable = {}
             if notable_info_extracted:
                  for k, v in notable_info_extracted.items():
                       if v:
-                          # User provided value, use it
                           final_notable[k] = v
                       else:
-                          # Ambiguous/Empty -> Fetch from DB
                           try:
                                from agi.utils.database import DatabaseManager
                                db = DatabaseManager()
-                               val = db.get_notable_info(k)
-                               if val:
-                                   final_notable[k] = val
+                               
+                               # Use partial match (e.g. "key" -> "openai_key", "google_key")
+                               found_infos = db.search_notable_info(k)
+                               if found_infos:
+                                   final_notable.update(found_infos)
+                               else:
+                                    # Fallback to exact get if search returns empty (unlikely with LIKE)
+                                    val = db.get_notable_info(k)
+                                    if val:
+                                        final_notable[k] = val
                           except:
                                pass
             
             merged_context["notable_information"] = final_notable
 
-            if self.config.verbose:
-                print(f"[AGI] Detected intent: {intent}")
+            # --- Reasoning Phase (Conditional) ---
+            # Only reason deeply if complex task (PLAN/RESEARCH/SINGLE_ACTION)
+            if intent != "CHAT":
+                if self.config.verbose:
+                    print("[AGI] Entering strategic reasoning phase...")
+                
+                # Step 1: Strategic Reasoning (Capability Discovery)
+                reasoning_result = await self.brain.reason(goal, merged_context)
+                refined_goal = reasoning_result["refined_goal"]
+                required_capabilities = reasoning_result["required_capabilities"]
+                reasoning_text = reasoning_result["reasoning"]
+                
+                # Yield reasoning result to UI
+                async for evt in yield_evt({
+                    "phase": "planning",
+                    "type": "reasoning_complete",
+                    "refined_goal": refined_goal,
+                    "required_capabilities": required_capabilities,
+                    "reasoning": reasoning_text
+                }):
+                    yield evt
+                
+                if self.config.verbose:
+                    print(f"[AGI] Reasoning complete. Required capabilities: {required_capabilities}")
+                
+                # Step 2: Match Skills from Registry
+                matched_skills = []
+                for capability in required_capabilities:
+                    # Fuzzy search for matching skills
+                    found_skills = self.skill_registry.search_skills_by_name(capability, limit=2)
+                    matched_skills.extend(found_skills)
+                
+                # Deduplicate while preserving order
+                seen = set()
+                unique_skills = []
+                for skill in matched_skills:
+                    if skill.metadata.name not in seen:
+                        seen.add(skill.metadata.name)
+                        unique_skills.append(skill)
+                
+                # Fallback: if no skills matched, use general discovery
+                if not unique_skills:
+                    if self.config.verbose:
+                        print("[AGI] No skills matched capabilities. Using general discovery...")
+                    unique_skills = await self.skill_registry.get_relevant_skills(refined_goal, limit=10)
+                
+                if self.config.verbose:
+                    skill_names = [s.metadata.name for s in unique_skills]
+                    print(f"[AGI] Matched {len(unique_skills)} skills: {skill_names}")
+                
+                # Step 3: Plan with matched skills
+                if self.config.verbose:
+                    print("[AGI] Creating plan with matched skills...")
+                
+                final_plan = None
+                async for update in self.planner.create_plan_streaming(refined_goal, merged_context, unique_skills):
+                    if update.get("type") == "planning_started":
+                        continue # Already yielded initial planning start
+                    
+                    # UI Hint: Expand the plan view by default
+                    update["expanded"] = True
+                    
+                    if "plan" in update and hasattr(update["plan"], "to_dict"):
+                        final_plan = update["plan"]
+                        plan_dict = final_plan.to_dict()
+                        plan_dict["expanded"] = True
+                        update["plan"] = plan_dict
+                    
+                    async for evt in yield_evt({"phase": "planning", **update}):
+                        yield evt
+                
+                if not final_plan:
+                    if self.config.verbose:
+                        print("[AGI] No plan generated.")
+                    return
+
+                # Stream execution phase
+                if self.config.verbose:
+                    print("[AGI] Executing plan...")
+                async for update in self.orchestrator.execute_plan_streaming(final_plan):
+                    if "result" in update and hasattr(update["result"], "to_dict"):
+                        update["result"] = update["result"].to_dict()
+                    
+                    async for evt in yield_evt({"phase": "execution", **update}):
+                        yield evt
+
+                # --- NEW: Persistence Stage ---
+                if final_plan:
+                    self.memory.add_to_short_term(goal, "Task completed successfully.") 
+                    asyncio.create_task(self.memory.update_conversation_summary())
+                
+                return
                 
             if intent == "CHAT":
                 if self.config.verbose:
@@ -430,7 +503,7 @@ class AGI:
                 
                 for msg in working_memory["recent_history"]:
                     chat_messages.append(msg)
-                
+
                 chat_messages.append({"role": "user", "content": goal})
 
                 # Streaming response generation
@@ -460,42 +533,6 @@ class AGI:
                 asyncio.create_task(self.memory.update_conversation_summary())
                 return
 
-            # Tier 1: Plan the actions (RESEARCH, SINGLE_ACTION, or PLAN intent)
-            if self.config.verbose:
-                print("[AGI] Creating plan...")
-            
-            # Get relevant, enabled skills
-            skills = await self.skill_registry.get_relevant_skills(goal)
-            
-            final_plan = None
-            async for update in self.planner.create_plan_streaming(goal, merged_context, skills):
-                if update.get("type") == "planning_started":
-                    continue # Already yielded initial planning start
-                if "plan" in update and hasattr(update["plan"], "to_dict"):
-                    final_plan = update["plan"]
-                    update["plan"] = final_plan.to_dict()
-                
-                async for evt in yield_evt({"phase": "planning", **update}):
-                    yield evt
-            
-            if not final_plan:
-                if self.config.verbose:
-                    print("[AGI] No plan generated.")
-                return
-
-            # Stream execution phase
-            if self.config.verbose:
-                print("[AGI] Executing plan...")
-            async for update in self.orchestrator.execute_plan_streaming(final_plan):
-                if "result" in update and hasattr(update["result"], "to_dict"):
-                    update["result"] = update["result"].to_dict()
-                
-                async for evt in yield_evt({"phase": "execution", **update}):
-                    yield evt
-
-            # --- NEW: Persistence Stage ---
-            if final_plan:
-                self.memory.add_to_short_term(goal, "Task completed successfully.") 
 
             # --- NEW: Motivation Stage ---
             if self.config.verbose:

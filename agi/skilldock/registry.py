@@ -335,6 +335,57 @@ class SkillRegistry:
             
         return selected
 
+    def search_skills_by_name(self, query: str, limit: int = 5) -> List[Skill]:
+        """
+        Search for skills using fuzzy matching on name and description.
+        Returns skills ranked by relevance.
+        
+        Args:
+            query: Search term
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching Skill objects
+        """
+        import difflib
+        
+        query_lower = query.lower()
+        scored_results = []
+        
+        # Get all enabled skills
+        active_skills = [
+            s for s in self._skills.values()
+            if not isinstance(s.config, dict) or s.config.get("enabled", True)
+        ]
+        
+        for skill in active_skills:
+            name = skill.metadata.name.lower()
+            description = skill.metadata.description.lower()
+            
+            # Hybrid scoring: name match > description match
+            name_score = 0
+            desc_score = 0
+            
+            if query_lower in name:
+                name_score = 2.0 + (len(query) / len(name)) if len(name) > 0 else 2.0
+            else:
+                name_score = difflib.SequenceMatcher(None, query_lower, name).ratio() * 1.5
+            
+            if query_lower in description:
+                desc_score = 1.0 + (len(query) / len(description)) if len(description) > 0 else 1.0
+            else:
+                desc_score = difflib.SequenceMatcher(None, query_lower, description).ratio()
+            
+            total_score = name_score + desc_score
+            
+            if total_score > 0.7:  # Lower threshold for more matches
+                scored_results.append((total_score, skill))
+        
+        # Sort by score descending
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        
+        return [skill for _, skill in scored_results[:limit]]
+
     def _sync_to_store(self):
         """Sync loaded skills metadata to SQLite."""
         for name, skill in self._skills.items():

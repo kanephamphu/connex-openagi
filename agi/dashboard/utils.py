@@ -18,6 +18,17 @@ def format_thought_process(step: Dict[str, Any]) -> str:
     """Format a planning step for display."""
     if step["type"] == "planning_started":
         return f"**Planning Goal**: {step.get('goal')}"
+    elif step["type"] == "reasoning_complete":
+        # New structured reasoning output
+        refined_goal = step.get("refined_goal", "")
+        capabilities = step.get("required_capabilities", [])
+        reasoning = step.get("reasoning", "")
+        
+        output = f"**Strategic Analysis Complete**\n\n"
+        output += f"*Refined Goal*: {refined_goal}\n\n"
+        output += f"*Required Capabilities*: {', '.join(capabilities)}\n\n"
+        output += f"*Reasoning*: {reasoning}\n"
+        return output
     elif step["type"] == "reasoning_token":
         # Usually aggregated in UI, but individual tokens handled elsewhere
         return step.get("token", "")

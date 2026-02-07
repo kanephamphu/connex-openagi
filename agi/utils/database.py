@@ -312,3 +312,51 @@ class DatabaseManager:
             except:
                 info[key] = val_str
         return info
+
+    def search_notable_info(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """
+        Search notable information with fuzzy matching and relevance ranking.
+        """
+        import json
+        import difflib
+        
+        # 1. Get all keys efficiently
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM notable_information")
+        all_rows = cursor.fetchall()
+        conn.close()
+        
+        # 2. Score keys
+        query_lower = query.lower()
+        scored_results = []
+        
+        for row in all_rows:
+            key, val_str = row[0], row[1]
+            key_lower = key.lower()
+            
+            # Hybrid Score: Substring Boost + Fuzzy Ratio
+            if query_lower in key_lower:
+                # Base score 1.0 + denseness preference
+                # (shorter key containing query is better)
+                if len(key) > 0:
+                    score = 1.0 + (len(query) / len(key))
+                else:
+                    score = 1.0
+            else:
+                 score = difflib.SequenceMatcher(None, query_lower, key_lower).ratio()
+            
+            if score > 0.4: # Relevance threshold
+                scored_results.append((score, key, val_str))
+        
+        # 3. Sort by score descending (Highest first)
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        
+        # 4. Return top results
+        info = {}
+        for _, key, val_str in scored_results[:limit]:
+            try:
+                info[key] = json.loads(val_str)
+            except:
+                info[key] = val_str
+        return info

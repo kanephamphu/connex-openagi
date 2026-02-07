@@ -63,56 +63,51 @@ async def process_user_input(prompt):
 
     # Prepare assistant response container
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        thought_placeholder = st.expander("Thinking...", expanded=True)
+        # UI Structure: Thinking (Collapsed), Plan (Expanded), Execution (Collapsed)
+        reasoning_expander = st.expander("Thinking Process", expanded=False)
+        plan_expander = st.expander("Execution Plan", expanded=True)
+        execution_expander = st.expander("Execution Log", expanded=False)
+        final_answer = st.empty()
         
         full_response = ""
         trace_log = []
         
+        # Placeholders for streaming content
+        with reasoning_expander:
+            reasoning_placeholder = st.empty()
+        
         try:
-            # Stream execution
-            # Note: execute_with_streaming yields progress updates
-            # We need to accumulate them
-            
-            with thought_placeholder:
-                current_thought = st.empty()
-                async for update in st.session_state.agi.execute_with_streaming(prompt):
+            async for update in st.session_state.agi.execute_with_streaming(prompt):
+                
+                # --- PLANNING PHASE ---
+                if update["phase"] == "planning":
+                    # Handle Reasoning (Streaming)
+                    if "partial_content" in update:
+                        reasoning_placeholder.markdown(update["partial_content"])
                     
-                    if update["phase"] == "planning":
-                        text = format_thought_process(update)
-                        if text:
-                            st.write(text)  # Append to expander log
-                            trace_log.append(text)
+                    # Handle Plan Generation
+                    text = format_thought_process(update)
+                    if text and "Plan Generated" in text:
+                        with plan_expander:
+                            st.markdown(text)
+                        trace_log.append(text)
+                    elif text and update.get("type") not in ["reasoning_token", "reasoning_chunk"]:
+                        # Other planning events (e.g. goal started)
+                        with reasoning_expander:
+                            st.write(text)
+                        trace_log.append(text)
                             
-                    elif update["phase"] == "execution":
+                # --- EXECUTION PHASE ---
+                elif update["phase"] == "execution":
+                    with execution_expander:
                         text = format_execution_step(update)
                         if text:
-                            st.write(text)
+                            st.markdown(text)
                             trace_log.append(text)
                     
-            # Once complete, we assume the last result or we need to extract the final answer
-            # The current streaming implementation wraps execute(), but execute() returns a dict
-            # execute_with_streaming yields updates. We might need to yield the final result differently.
-            # Let's verify agi.__init__.py execute_with_streaming.
-            # It yields phases. It doesn't explicitly yield the "final answer" text if it's just a return value.
-            # But the Orchestrator execution result usually contains the output.
-            
-            # Simple fallback if "foundation chat" was used, the result is in the update?
-            # Actually, execute_with_streaming in agi/__init__.py yields execution updates.
-            # The last update from orchestrator execution usually contains the result.
-            
-            # Let's perform a simple 'execute' call to get the final clean text if we want to be sure,
-            # OR we rely on the skill output.
-            # For 'general_chat', the skill output IS the response.
-            
-            # For now, let's just say "Task Completed" and show the last output.
-            full_response = "✅ Task Completed. Check the thought process for details."
-            
-            # If it was a chat skill, try to find the reply
-            # This is a bit hacky, normally the AGI should return a clear "Response".
-            # In Phase 3 (Refinement), we should standardize "Final Response" in AGI class.
-            
-            message_placeholder.markdown(full_response)
+            # Completion
+            full_response = "✅ **Task Completed**"
+            final_answer.markdown(full_response)
             
             st.session_state.messages.append({
                 "role": "assistant",

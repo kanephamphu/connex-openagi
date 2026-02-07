@@ -97,17 +97,22 @@ class GenAIBrain:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    async def reason(self, goal: str, context: Optional[Dict[str, Any]] = None):
+    async def reason(self, goal: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Perform a reasoning analysis of the goal.
+        Perform strategic reasoning to identify required capabilities.
         
-        Yields reasoning tokens or progress updates.
+        Returns:
+            {
+                "refined_goal": str,
+                "required_capabilities": List[str],
+                "reasoning": str
+            }
         """
         provider, model = self.select_model(TaskType.PLANNING)
         client = self.get_client(provider)
         
         if self.config.verbose:
-            print(f"[Brain] Reasoning with {provider}/{model}...")
+            print(f"[Brain] Strategic reasoning with {provider}/{model}...")
         
         # Load Constitution (The Soul)
         soul_path = os.path.join(os.path.dirname(__file__), "SOUL.md")
@@ -116,69 +121,121 @@ class GenAIBrain:
             with open(soul_path, "r") as f:
                 soul_content = f.read()
 
-        prompt = f"""You are the 'Reasoning Engine' of an autonomous AGI.
-        Your goal is to analyze the user's request and devise a robust, efficient strategy.
-        
-        ### CONNECTED CONSTITUTION (THE SOUL)
-        You MUST adhere to the following principles:
-        {soul_content}
-        ### END CONSTITUTION
+        prompt = f"""You are the 'Strategic Reasoning Engine' of an autonomous AGI.
+Your task is to analyze the user's goal and identify what capabilities (skills/perceptions) are needed.
 
-        Goal: "{goal}"
-        Context: {json.dumps(context or {})}
+### CONNECTED CONSTITUTION (THE SOUL)
+You MUST adhere to the following principles:
+{soul_content}
+### END CONSTITUTION
 
-        ### EMOTIONAL CONTEXT
-        Detected User Emotion: {context.get('human_emotion', 'neutral')}
-        AGI Self-Reflection: {context.get('agi_emotion', 'neutral')}
-        
-        ### CONVERSATION CONTEXT
-        Summary: {context.get('conversation_summary', 'None')}
-        Recent Turns: {json.dumps(context.get('conversation_history', []))}
-        
-        ### NOTABLE INFORMATION
-        User Knowledge: {json.dumps(context.get('notable_information', {}))}
+Goal: "{goal}"
+Context: {json.dumps(context or {})}
 
-        Perform a deep 'Inner Monologue' before taking action. Structured your thoughts:
-        1. **Core Objective**: What does the user *actually* want? (Interpret intent beyond words)
-        2. **Capability Check**: Which specific skills/tools are best suited? (e.g., 'browser' for research, 'code_executor' for calc)
-        3. **Constraint Analysis**: Are there missing inputs? Risks? API limits? Ambiguities?
-        4. **Strategic Plan**:
-           - Step 1: ...
-           - Step 2: ...
-           - Self-Correction Strategy: "If Step 1 fails, I will..."
+### EMOTIONAL CONTEXT
+Detected User Emotion: {context.get('human_emotion', 'neutral') if context else 'neutral'}
+AGI Self-Reflection: {context.get('agi_emotion', 'neutral') if context else 'neutral'}
 
-        Be proactive. If the goal is vague, decide on the most logical path rather than just asking for clarification (unless critical).
-        """
+### CONVERSATION CONTEXT
+Summary: {context.get('conversation_summary', 'None') if context else 'None'}
+Recent Turns: {json.dumps(context.get('conversation_history', [])[:3]) if context else '[]'}
+
+### NOTABLE INFORMATION
+User Knowledge: {json.dumps(context.get('notable_information', {}) if context else {})}
+
+### YOUR TASK
+Analyze this goal and identify:
+1. **Refined Goal**: A clearer, more actionable version of the user's request
+2. **Required Capabilities**: List of skill/perception names that would help (e.g., "web search", "file manager", "weather api")
+   - Think about: What tools/sensors are needed?
+   - Be specific but don't invent capabilities
+3. **Reasoning**: Brief explanation of your analysis
+
+Output ONLY valid JSON:
+{{
+  "refined_goal": "Clear, actionable goal statement",
+  "required_capabilities": ["capability_1", "capability_2"],
+  "reasoning": "Brief explanation of why these capabilities are needed"
+}}
+"""
         
         try:
             if provider in ["openai", "deepseek", "groq"]:
-                stream = await client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt    }],
-                    temperature=1,
-                    stream=True
-                )
-                async for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        yield {
-                            "type": "reasoning_token",
-                            "token": chunk.choices[0].delta.content
-                        }
+                kwargs = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "You are a strategic reasoning engine. Respond ONLY with valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 1,
+                }
+                
+                try:
+                    response = await client.chat.completions.create(**kwargs)
+                except Exception as e:
+                    # Robust parameter retry
+                    retry_needed = False
+                    err_str = str(e).lower()
+                    if "max_tokens" in err_str and "supported" in err_str:
+                        kwargs.pop("max_tokens", None)
+                        kwargs["max_completion_tokens"] = 800
+                        retry_needed = True
+                    if "temperature" in err_str and ("supported" in err_str or "value" in err_str):
+                        kwargs["temperature"] = 1.0
+                        retry_needed = True
+                    
+                    if retry_needed:
+                        response = await client.chat.completions.create(**kwargs)
+                    else:
+                        raise
+                
+                result_text = response.choices[0].message.content.strip()
+                
             elif provider == "anthropic":
-                # Anthropic streaming
-                async with client.messages.stream(
+                response = await client.messages.create(
                     model=model,
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}],
-                ) as stream:
-                    async for text in stream.text_stream:
-                        yield {
-                            "type": "reasoning_token",
-                            "token": text
-                        }
+                    max_tokens=800,
+                    system="You are a strategic reasoning engine. Respond ONLY with valid JSON.",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                result_text = response.content[0].text.strip()
+            else:
+                raise ValueError(f"Unsupported provider: {provider}")
+            
+            # Parse JSON
+            if self.config.verbose:
+                print(f"[Brain] Raw reasoning response: {result_text}")
+            
+            # Clean potential markdown code blocks
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0].strip()
+            
+            parsed = json.loads(result_text)
+            
+            # Validate structure
+            if not all(k in parsed for k in ["refined_goal", "required_capabilities", "reasoning"]):
+                raise ValueError("Missing required keys in reasoning output")
+            
+            return parsed
+            
+        except json.JSONDecodeError as e:
+            print(f"[Brain] JSON parsing failed: {e}. Raw: {result_text}")
+            # Fallback
+            return {
+                "refined_goal": goal,
+                "required_capabilities": [],
+                "reasoning": "Failed to parse reasoning output"
+            }
         except Exception as e:
             print(f"[Brain] Reasoning failed: {e}")
-            yield {"type": "reasoning_error", "error": str(e)}
+            return {
+                "refined_goal": goal,
+                "required_capabilities": [],
+                "reasoning": f"Error: {str(e)}"
+            }
+
 
     def select_model(self, task_type: TaskType | str) -> tuple[str, str]:
         """
@@ -257,7 +314,9 @@ class GenAIBrain:
         
         # Prepare Context
         summary = (context or {}).get('summary', 'None')
-        
+        history_raw = (context or {}).get('recent_history', [])
+        history = json.dumps(history_raw[:-5] if len(history_raw) > 5 else history_raw)
+
         # 2. Unified Prompt
         prompt_text = (
                 "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
@@ -269,7 +328,10 @@ class GenAIBrain:
                 "4. PLAN: Multi-step goals, data synthesis, or complex problem solving.\n\n"
                 "### NOTABLE INFORMATION\n"
                 "1. New Info: Extract specific entities/preferences the user provides (e.g., 'my name is X'). Key-Value pair.\n"
-                "2. Need-to-Know: If user asks for info that might be stored (e.g., 'what is my API key?', 'call mom'), extract the key with an EMPTY string value (\"\").\n"
+                "2. Retrieval & Relevance: Extract keys for information that is requested OR logically relevant to the request. Set value to EMPTY string (\"\").\n"
+                "   - Direct: 'what is my API key?' -> {\"api_key\": \"\"}\n"
+                "   - Associative: 'How is my family?' -> {\"mom_name\": \"\", \"dad_name\": \"\", \"family_members\": \"\"}\n"
+                "   - Contextual: 'Deploy this' -> {\"aws_credentials\": \"\", \"github_token\": \"\"}\n"
                 "Format: {\"intent\": \"...\", \"notable_information\": {\"key\": \"value_or_empty\"}}\n"
                 "If no notable info, return empty dict.\n\n"
                 "### EXAMPLES\n"
@@ -281,6 +343,7 @@ class GenAIBrain:
                 "- \"Use my personal API key\" -> {\"intent\": \"PLAN\", \"notable_information\": {\"personal_api_key\": \"\"}}\n\n"
                 "### CONTEXT\n"
                 f"Summary: {summary}\n"
+                f"History: {history}\n"
                 f"USER INPUT: \"{query}\"\n"
                 "DECISION (JSON ONLY):"
             )
@@ -319,7 +382,7 @@ class GenAIBrain:
                             {"role": "user", "content": prompt_text}
                         ],
                         "temperature": 0,
-                        "max_tokens": 150
+                        "max_tokens": 300  # Increased for notable info extraction
                     }
                     
                     try:
@@ -330,7 +393,7 @@ class GenAIBrain:
                         err_str = str(e).lower()
                         if "max_tokens" in err_str and "supported" in err_str:
                             kwargs.pop("max_tokens", None)
-                            kwargs["max_completion_tokens"] = 150
+                            kwargs["max_completion_tokens"] = 300
                             retry_needed = True
                         if "temperature" in err_str and ("supported" in err_str or "value" in err_str):
                             kwargs["temperature"] = 1.0
