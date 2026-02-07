@@ -130,17 +130,17 @@ class VoiceEar:
         self.on_event(event)
 
     def start(self):
-        if self.running:
-            return
+        # if self.running:
+        #     return
             
-        if not SPEECH_RECOGNITION_AVAILABLE:
-            print("[Ear] Cannot start Ear: speech_recognition is missing.")
-            return
+        # if not SPEECH_RECOGNITION_AVAILABLE:
+        #     print("[Ear] Cannot start Ear: speech_recognition is missing.")
+        #     return
             
-        self.running = True
-        self._thread = threading.Thread(target=self._listen_loop, name="VoiceEarThread", daemon=True)
-        self._thread.start()
-        print("[Ear] Background listener started.")
+        # self.running = True
+        # self._thread = threading.Thread(target=self._listen_loop, name="VoiceEarThread", daemon=True)
+        # self._thread.start()
+        # print("[Ear] Background listener started.")
 
     def stop(self):
         if not self.running:
