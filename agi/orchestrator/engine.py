@@ -64,9 +64,11 @@ class Orchestrator:
         # Use shared world manager or initialize new one (fallback)
         if world_manager:
             self.world = world_manager
-        else:
+        elif getattr(config, 'enable_world_recognition', True):
             from agi.world.manager import WorldManager
             self.world = WorldManager(config, self.brain)
+        else:
+            self.world = None
     
     async def execute_plan(self, plan: ActionPlan) -> ExecutionResult:
         """

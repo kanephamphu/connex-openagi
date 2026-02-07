@@ -31,9 +31,9 @@ $PIP_CMD install --upgrade pip
 echo "Installing Project Core Dependencies..."
 $PIP_CMD install -e .
 
-# Install Torch
-echo "Installing Torch..."
-$PIP_CMD install torch torchvision torchaudio
+# Install Torch (Optional: Only required for local World Recognition and local Sub-Brain)
+echo "Skipping Torch installation (uncomment below if needed)..."
+# $PIP_CMD install torch torchvision torchaudio
 
 # Install Other Requirements
 echo "Installing LLM and Server dependencies..."

@@ -45,15 +45,28 @@ class BrainPlanner(Planner):
         )
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.config.planner_model,
-                messages=[
+            kwargs = {
+                "model": self.config.planner_model,
+                "messages": [
                     {"role": "system", "content": "You are a context-aware system. Output JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.0
-            )
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0
+            }
+            
+            try:
+                response = await self.client.chat.completions.create(**kwargs)
+            except Exception as e:
+                # Retry if model enforces temperature=1 (e.g. o1/reasoning)
+                if "temperature" in str(e).lower() and ("supported" in str(e).lower() or "value" in str(e).lower()):
+                    if self.config.verbose:
+                        print(f"[BrainPlanner] Retrying context selection with temperature=1.0 due to model constraint.")
+                    kwargs["temperature"] = 1.0
+                    response = await self.client.chat.completions.create(**kwargs)
+                else:
+                    raise e
+                    
             selection = json.loads(response.choices[0].message.content)
             phrase = selection.get("search_phrase", "")
             

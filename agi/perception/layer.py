@@ -28,6 +28,11 @@ class PerceptionLayer:
         
     async def initialize(self, memory_manager=None, skill_registry=None, identity_manager=None):
         """Initialize all registered perception modules with robustness."""
+        if not getattr(self.config, 'enable_world_recognition', True):
+             if self.config.verbose:
+                 print("[Perception] World Recognition Disabled. Skipping module loading.")
+             return
+             
         modules_to_load = [
             (".modules.system_monitor.system", "SystemMonitorPerception", []),
             (".modules.workload.system", "WorkloadPerception", ["identity_manager"]),

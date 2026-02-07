@@ -85,11 +85,31 @@ export default function SettingsPage() {
     const apiKeys = ["openai_api_key", "anthropic_api_key", "deepseek_api_key", "groq_api_key", "google_api_key"];
     const modelSettings = ["default_planner", "default_executor", "planner_model", "executor_model", "temperature", "max_tokens"];
     const runtimeSettings = ["verbose", "max_retries", "action_timeout", "self_correction_enabled"];
+    const subBrainSettings = ["use_external_subbrain", "sub_brain_provider", "sub_brain_model", "sub_brain_url"];
     const registrySettings = ["registry_url", "connex_auth_token", "allow_skill_publishing"];
 
     const renderField = (key: string) => {
         const value = config[key];
-        const isBool = typeof value === "boolean" || (value === undefined && (key === "verbose" || key === "self_correction_enabled"));
+        const isBool = typeof value === "boolean" || (value === undefined && (key === "verbose" || key === "self_correction_enabled" || key === "use_external_subbrain"));
+
+        if (key === "sub_brain_provider") {
+            return (
+                <div key={key} className="mb-4">
+                    <label className="block text-sm font-medium text-gray-400 mb-1 capitalize">
+                        {key.replace(/_/g, " ")}
+                    </label>
+                    <select
+                        value={value || "local"}
+                        onChange={(e) => handleChange(key, e.target.value)}
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 focus:outline-none appearance-none"
+                    >
+                        <option value="local">Local (Ollama)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="groq">Groq</option>
+                    </select>
+                </div>
+            );
+        }
 
         return (
             <div key={key} className="mb-4">
@@ -158,6 +178,16 @@ export default function SettingsPage() {
                         </h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {apiKeys.map(key => renderField(key))}
+                        </div>
+                    </section>
+
+                    {/* Sub-Brain Settings Section */}
+                    <section className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-xl font-semibold mb-4 text-green-400 border-b border-gray-700 pb-2">
+                            Sub-Brain Configuration
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {subBrainSettings.map(key => renderField(key))}
                         </div>
                     </section>
 

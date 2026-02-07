@@ -55,8 +55,12 @@ class AGI:
         from agi.planner.brain_planner import BrainPlanner
         self.planner = BrainPlanner(self.config)
         self.skill_registry = SkillRegistry(self.config)
-        from agi.world.manager import WorldManager
-        self.world = WorldManager(self.config, self.brain)
+        
+        if getattr(self.config, 'enable_world_recognition', True):
+            from agi.world.manager import WorldManager
+            self.world = WorldManager(self.config, self.brain)
+        else:
+            self.world = None
         
         self.orchestrator = Orchestrator(
             config=self.config,
@@ -65,7 +69,8 @@ class AGI:
         )
         # Tier Peer Layers
         self.perception = PerceptionLayer(self.config)
-        self.perception.grounding_callback = self.world.handle_perception
+        if self.world:
+            self.perception.grounding_callback = self.world.handle_perception
         
         self.reflex = ReflexLayer(self.config)
         self.memory = MemoryManager(self.config, self.brain)
@@ -127,6 +132,12 @@ class AGI:
         await self.skill_registry.ensure_embeddings()
         await self.skill_registry.initialize_all_skills()
         # Attach sub-brain to config for easier perception access
+        if getattr(self.config, 'enable_world_recognition', True):
+            from agi.world.manager import WorldManager
+            self.world = WorldManager(self.config, self.brain)
+        else:
+            self.world = None
+
         setattr(self.config, 'sub_brain_manager', self.sub_brain)
         
         await self.perception.initialize(
@@ -227,10 +238,16 @@ class AGI:
         working_memory = self.memory.get_working_memory()
         emotional_context = self.memory.emotional_state
         
+        # Fetch Notable Info
+        from agi.utils.database import DatabaseManager
+        db = DatabaseManager()
+        notable_info = db.get_all_notable_info()
+
         merged_context = {
             **(context or {}),
             "conversation_history": working_memory["recent_history"],
             "conversation_summary": working_memory["summary"],
+            "notable_information": notable_info, 
             **emotional_context
         }
 
@@ -357,10 +374,16 @@ class AGI:
             working_memory = self.memory.get_working_memory()
             emotional_context = self.memory.emotional_state
             
+            # Fetch Notable Info
+            from agi.utils.database import DatabaseManager
+            db = DatabaseManager()
+            notable_info = db.get_all_notable_info()
+            
             merged_context = {
                 **(context or {}),
                 "conversation_history": working_memory["recent_history"],
                 "conversation_summary": working_memory["summary"],
+                "notable_information": notable_info,
                 **emotional_context
             }
 

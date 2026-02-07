@@ -135,6 +135,9 @@ class GenAIBrain:
         Summary: {context.get('conversation_summary', 'None')}
         Recent Turns: {json.dumps(context.get('conversation_history', []))}
         
+        ### NOTABLE INFORMATION
+        User Knowledge: {json.dumps(context.get('notable_information', {}))}
+
         Perform a deep 'Inner Monologue' before taking action. Structured your thoughts:
         1. **Core Objective**: What does the user *actually* want? (Interpret intent beyond words)
         2. **Capability Check**: Which specific skills/tools are best suited? (e.g., 'browser' for research, 'code_executor' for calc)
@@ -253,39 +256,77 @@ class GenAIBrain:
             try:
                 task = {
                     "prompt": (
-                        "### INTENT CLASSIFICATION GUIDELINES\n"
-                        "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier.\n\n"
+                        "### INTENT CLASSIFICATION & INFORMATION EXTRACTION\n"
+                        "You are a high-precision Intent Classifier. Your goal is to map user input to the correct processing tier AND extract notable information.\n\n"
                         "### CATEGORIES\n"
                         "1. CHAT: Social interactions, greetings, bot identity, or simple acknowledgement.\n"
                         "2. RESEARCH: Knowledge lookups, news, weather, or finding facts online.\n"
                         "3. SINGLE_ACTION: One-off system/file commands (opening apps, volume, file management).\n"
                         "4. PLAN: Multi-step goals, data synthesis, or complex problem solving.\n\n"
-                        "### FEW-SHOT EXAMPLES\n"
-                        "- \"Hey there\" -> CHAT\n"
-                        "- \"Who are you?\" -> CHAT\n"
-                        "- \"Cool, thanks\" -> CHAT\n"
-                        "- \"What is the current temperature in NYC?\" -> RESEARCH\n"
-                        "- \"Find me the latest AI news\" -> RESEARCH\n"
-                        "- \"Who won the Super Bowl last year?\" -> RESEARCH\n"
-                        "- \"Mute my audio\" -> SINGLE_ACTION\n"
-                        "- \"Open the Calculator app\" -> SINGLE_ACTION\n"
-                        "- \"Delete meeting_notes.pdf\" -> SINGLE_ACTION\n"
-                        "- \"Read data.csv and find outliers\" -> PLAN\n"
-                        "- \"Research Apple stock and write a 1-page summary to my desktop\" -> PLAN\n"
-                        "- \"Find a recipe for Lasagna and list the ingredients in a new file\" -> PLAN\n\n"
+                        "### NOTABLE INFORMATION\n"
+                        "1. New Info: Extract specific entities/preferences the user provides (e.g., 'my name is X'). Key-Value pair.\n"
+                        "2. Need-to-Know: If user asks for info that might be stored (e.g., 'what is my API key?', 'call mom'), extract the key with an EMPTY string value (\"\").\n"
+                        "Format: {\"intent\": \"...\", \"notable_information\": {\"key\": \"value_or_empty\"}}\n"
+                        "If no notable info, return empty dict.\n\n"
+                        "### EXAMPLES\n"
+                        "- \"Hey there\" -> {\"intent\": \"CHAT\", \"notable_information\": {}}\n"
+                        "- \"Find news about Apple\" -> {\"intent\": \"RESEARCH\", \"notable_information\": {}}\n"
+                        "- \"My mom's phone number is 555-0199\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"555-0199\"}}\n"
+                        "- \"What is my mom's phone number?\" -> {\"intent\": \"CHAT\", \"notable_information\": {\"mom_phone\": \"\"}}\n"
+                        "- \"I save my API key as sk-123\" -> {\"intent\": \"SINGLE_ACTION\", \"notable_information\": {\"api_key\": \"sk-123\"}}\n"
+                        "- \"Use my personal API key\" -> {\"intent\": \"PLAN\", \"notable_information\": {\"personal_api_key\": \"\"}}\n\n"
                         f"USER INPUT: \"{query}\"\n"
-                        "DECISION:"
+                        "DECISION (JSON ONLY):"
                     ),
-                    "system": "Respond ONLY with one word: CHAT, RESEARCH, SINGLE_ACTION, or PLAN."
+                    "system": "Respond ONLY with valid JSON containing \"intent\" and \"notable_information\"."
                 }
                 results = await target_brain.execute_parallel([task])
-                intent_raw = results[0].upper() if results else ""
+                result_raw = results[0].strip() if results else "{}"
                 
+                # Clean up potential markdown code blocks
+                if "```" in result_raw:
+                    result_raw = result_raw.split("```")[1].strip()
+                    if result_raw.startswith("json"):
+                        result_raw = result_raw[4:].strip()
+                
+                try:
+                    parsed = json.loads(result_raw)
+                    print(parsed)
+                    intent_raw = parsed.get("intent", "PLAN").upper()
+                    notable_info = parsed.get("notable_information", {})
+                    
+                    # Store notable info if present and NOT empty
+                    if notable_info:
+                        try:
+                            from agi.utils.database import DatabaseManager
+                            db = DatabaseManager()
+                            for k, v in notable_info.items():
+                                if v: # Only save if user provided a value
+                                    db.set_notable_info(k, v)
+                                    if self.config.verbose:
+                                        print(f"[Brain] Stored notable info: {k}={v}")
+                                else:
+                                    # Empty value means "need to know" / retrieval
+                                    # Logic: The Planner receives all notable info in context, 
+                                    # so we just ensure we don't overwrite the DB with empty string.
+                                    if self.config.verbose:
+                                        found = db.get_notable_info(k)
+                                        print(f"[Brain] Identified need-to-know: {k} (Found in DB: {found is not None})")
+                                        
+                        except Exception as db_e:
+                            print(f"[Brain] Failed to process notable info: {db_e}")
+
+                except json.JSONDecodeError:
+                    # Fallback if model fails to output JSON (e.g. outputs just string)
+                    intent_raw = result_raw.upper()
+
                 valid_intents = ["CHAT", "RESEARCH", "SINGLE_ACTION", "PLAN"]
                 for i in valid_intents:
                     if i in intent_raw:
                         return i
-            except:
+            except Exception as e:
+                 if self.config.verbose:
+                    print(f"[Brain] Sub-brain intent classification error: {e}")
                  pass # Fallback to cloud
         
         # 2. Cloud Fallback

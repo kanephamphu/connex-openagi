@@ -470,6 +470,9 @@ async def publish_component(request: PublishRequest):
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     if not agi_instance:
+        # Check if we can lazy-init or key is missing
+        if hasattr(app.state, 'init_error'):
+             raise HTTPException(status_code=503, detail=f"AGI Unavailable: {app.state.init_error}")
         raise HTTPException(status_code=503, detail="AGI not initialized")
         
     async def event_generator():
@@ -495,9 +498,13 @@ async def chat_stream(request: ChatRequest):
             }
             
         except Exception as e:
+            # Check for specific "AGI not ready" errors or DB errors
+            error_msg = str(e)
+            print(f"[Server] Stream error: {error_msg}")
+            
             yield {
                 "event": "error",
-                "data": json.dumps({"error": str(e)})
+                "data": json.dumps({"error": error_msg})
             }
 
     return EventSourceResponse(event_generator())

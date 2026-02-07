@@ -42,7 +42,8 @@ class SkillAcquisitionSkill(Skill):
     async def execute(self, requirement: str) -> Dict[str, Any]:
         """
         Generates code for a new skill and calls skill_creator.
-        await self.validate_inputs(requirement=requirement)
+        """
+        # await self.validate_inputs(requirement=requirement)
         
         # 1. First, search the Connex Registry for an existing skill
         if self.config.verbose:

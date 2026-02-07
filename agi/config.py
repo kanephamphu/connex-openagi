@@ -37,7 +37,7 @@ class AGIConfig:
     google_api_key: str | None = None
     
     # Model Selection
-    default_planner: PlannerType = "deepseek"
+    default_planner: PlannerType = "openai"
     default_executor: ExecutorType = "openai"
     
     # Runtime Configuration
@@ -53,13 +53,14 @@ class AGIConfig:
     # Sub-Brain Configuration
     sub_brain_count: int = 2 # Number of parallel small brains
     sub_brain_url: str = "http://localhost:11434/v1" # Local LLM API URL
-    sub_brain_model: str = "SmolLM-135M" # Small model name
+    sub_brain_model: str = "gpt-5-nano" # Small model name
     sub_brain_init_command: str = "python agi/services/smol_brain_server.py" # Command to start the service
     sub_brain_health_endpoint: str = "http://localhost:11434/api/tags" # Health check URL
+    sub_brain_provider: str = "openai" # provider for subbrain: local, openai, groq, etc.
     
     # Model-specific settings
-    planner_model: str = "deepseek-reasoner"
-    executor_model: str = "gpt-4.1-nano"
+    planner_model: str = "gpt-5-nano"
+    executor_model: str = "gpt-5-nano"
     temperature: float = 0.7
     max_tokens: int = 4096
     max_history: int = 10  # Limit to 10 recently messages
@@ -70,6 +71,7 @@ class AGIConfig:
     skills_storage_path: str = "installed_skills"
     
     # Enable/Disable features
+    enable_world_recognition: bool = False # Master switch for world/perception features
     allow_skill_publishing: bool = False
     allow_skill_isolation: bool = False
     skills_data_path: str = "skill_data"
@@ -97,14 +99,15 @@ class AGIConfig:
             registry_url=os.getenv("CONNEX_REGISTRY_URL", "http://localhost:8000/api/v1"),
             connex_auth_token=os.getenv("CONNEX_AUTH_TOKEN"),
             skills_storage_path=os.getenv("AGI_SKILLS_STORAGE", "installed_skills"),
+            enable_world_recognition=os.getenv("AGI_ENABLE_WORLD_RECOGNITION", "false").lower() == "true",
             allow_skill_publishing=os.getenv("AGI_ALLOW_PUBLISHING", "false").lower() == "true",
             allow_skill_isolation=os.getenv("AGI_ISOLATE_SKILLS", "false").lower() == "true",
             skills_data_path=os.getenv("AGI_SKILLS_DATA", "skill_data"),
             
-            default_planner=os.getenv("AGI_DEFAULT_PLANNER", "deepseek"),
+            default_planner=os.getenv("AGI_DEFAULT_PLANNER", "openai"),
             default_executor=os.getenv("AGI_DEFAULT_EXECUTOR", "openai"),
-            planner_model=os.getenv("AGI_PLANNER_MODEL") or os.getenv("MODEL_NAME") or "gpt-4o",
-            executor_model=os.getenv("AGI_EXECUTOR_MODEL") or os.getenv("MODEL_NAME") or "gpt-4o",
+            planner_model=os.getenv("AGI_PLANNER_MODEL") or os.getenv("MODEL_NAME") or "gpt-5-nano",
+            executor_model=os.getenv("AGI_EXECUTOR_MODEL") or os.getenv("MODEL_NAME") or "gpt-5-nano",
             verbose=os.getenv("AGI_VERBOSE", "false").lower() == "true",
             max_retries=int(os.getenv("AGI_MAX_RETRIES", "3")),
             action_timeout=int(os.getenv("AGI_ACTION_TIMEOUT", "60")),
@@ -114,10 +117,11 @@ class AGIConfig:
             reflex_storage_path=os.getenv("AGI_REFLEX_STORAGE", "installed_reflex"),
             sub_brain_count=int(os.getenv("AGI_SUB_BRAIN_COUNT", "2")),
             sub_brain_url=os.getenv("AGI_SUB_BRAIN_URL", "http://localhost:11434/v1"),
-            sub_brain_model=os.getenv("AGI_SUB_BRAIN_MODEL", "HuggingFaceTB/SmolLM2-1.7B-Instruct"),
+            sub_brain_model=os.getenv("AGI_SUB_BRAIN_MODEL", "gpt-5-nano"),
             sub_brain_init_command=os.getenv("AGI_SUB_BRAIN_INIT", "./run_smol_brain.sh"),
             sub_brain_health_endpoint=os.getenv("AGI_SUB_BRAIN_HEALTH", "http://localhost:11434/api/health"),
             use_external_subbrain=os.getenv("AGI_USE_EXTERNAL_SUBBRAIN", "true").lower() == "true",
+            sub_brain_provider=os.getenv("AGI_SUB_BRAIN_PROVIDER", "openai"),
             max_history=int(os.getenv("AGI_MAX_HISTORY", "10")),
             speak_output=os.getenv("AGI_SPEAK_OUTPUT", "false").lower() == "true",
         )

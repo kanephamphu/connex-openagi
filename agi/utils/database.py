@@ -45,6 +45,15 @@ class DatabaseManager:
             )
         """)
         
+        # Notable Information Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notable_information (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Check if embedding column exists (migration)
         cursor.execute("PRAGMA table_info(perceptions)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -54,6 +63,23 @@ class DatabaseManager:
             cursor.execute("ALTER TABLE perceptions ADD COLUMN category TEXT")
         if "sub_category" not in columns:
             cursor.execute("ALTER TABLE perceptions ADD COLUMN sub_category TEXT")
+            
+        # Initialize default config if not present
+        default_configs = {
+            "use_external_subbrain": "true",
+            "sub_brain_provider": "\"openai\"",
+            "sub_brain_model": "\"gpt-5-nano\"",
+            "default_planner": "\"openai\"",
+            "default_executor": "\"openai\"",
+            "planner_model": "\"gpt-5-nano\"",
+            "executor_model": "\"gpt-5-nano\""
+        }
+        
+        for key, value in default_configs.items():
+            cursor.execute("""
+                INSERT OR IGNORE INTO system_config (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            """, (key, value))
             
         conn.commit()
         conn.close()
@@ -231,3 +257,58 @@ class DatabaseManager:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    # --- Notable Information Methods ---
+    def set_notable_info(self, key: str, value: Any):
+        """Set a notable information key-value pair."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Store as JSON string to preserve types (simple types)
+        val_str = json.dumps(value)
+        
+        cursor.execute("""
+            INSERT INTO notable_information (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value=excluded.value,
+                updated_at=CURRENT_TIMESTAMP
+        """, (key, val_str))
+        
+        conn.commit()
+        conn.close()
+
+    def get_notable_info(self, key: str, default: Any = None) -> Any:
+        """Get a notable information value by key."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM notable_information WHERE key=?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            try:
+                return json.loads(row[0])
+            except:
+                return row[0]
+        return default
+
+    def get_all_notable_info(self) -> Dict[str, Any]:
+        """Get all notable information."""
+        import json
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM notable_information")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        info = {}
+        for row in rows:
+            key, val_str = row[0], row[1]
+            try:
+                info[key] = json.loads(val_str)
+            except:
+                info[key] = val_str
+        return info

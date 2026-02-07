@@ -20,13 +20,35 @@ class SubBrainHost:
         self.init_command = config.sub_brain_init_command
         self.health_endpoint = config.sub_brain_health_endpoint
         self.process: Optional[asyncio.subprocess.Process] = None
-        self.client = AsyncOpenAI(
-            api_key="local",
-            base_url=self.url
-        )
+        
+        # Determine provider
+        self.provider = getattr(config, 'sub_brain_provider', 'local')
+        if self.config.use_external_subbrain:
+             # If strictly forced external but no provider specified, default to openai if key exists, else warning
+             if self.provider == 'local':
+                 # Fallback logic if users just toggled the boolean but didn't set provider
+                 if self.config.openai_api_key:
+                     self.provider = 'openai'
+        
+        if self.provider == "openai":
+            self.client = AsyncOpenAI(api_key=self.config.openai_api_key)
+        elif self.provider == "groq":
+            self.client = AsyncOpenAI(
+                api_key=self.config.groq_api_key, 
+                base_url="https://api.groq.com/openai/v1"
+            )
+        else:
+            # Default to local
+            self.client = AsyncOpenAI(
+                api_key="local",
+                base_url=self.url
+            )
 
     async def is_healthy(self) -> bool:
         """Check if the sub-brain service is active and responding."""
+        if self.provider != "local":
+            return True # Assume external SaaS is up
+            
         async with httpx.AsyncClient() as client:
             try:
                 # Basic health check to the endpoint
@@ -37,6 +59,10 @@ class SubBrainHost:
 
     async def initialize(self) -> bool:
         """Check if the external host service is healthy."""
+        if self.provider != "local":
+             print(f"[SubBrainHost-{self.host_id}] configured for external provider: {self.provider}")
+             return True
+             
         is_up = await self.is_healthy()
         if is_up:
             print(f"[SubBrainHost-{self.host_id}] Service healthy at {self.url}")
